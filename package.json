@@ -1,0 +1,20 @@
+{
+  "name": "credicontrole-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CrediControle: controle de empréstimos (contratos, cobranças, caixa) em servidor próprio",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --env-file=.env --watch server.js",
+    "test": "node testes/api.test.js"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.10",
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
+  }
+}

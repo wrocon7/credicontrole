@@ -1,0 +1,675 @@
+<title>CrediControle</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: sidebar de navegação fixa + área de trabalho com cartões de indicadores, tabelas e gavetas de detalhe */
+:root{
+  --bg:#f3f5f2; --surface:#ffffff; --surface-2:#eef2ee; --line:#dde3dc;
+  --fg:#17221c; --muted:#5d6b62; --side:#10241b; --side-fg:#cfe0d5; --side-muted:#7f9b8a;
+  --accent:#1f7a52; --accent-fg:#ffffff; --accent-soft:#dcefe4;
+  --ok:#1f7a52; --warn:#b26b00; --warn-soft:#fbefd9; --bad:#c23b2b; --bad-soft:#fbe3df;
+  --f-display:"Sora",system-ui,sans-serif; --f-body:"Figtree",system-ui,sans-serif; --f-num:"JetBrains Mono",ui-monospace,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d1511; --surface:#15201a; --surface-2:#1b2821; --line:#26362d;
+  --fg:#e3ece6; --muted:#93a89b; --side:#091009; --side-fg:#cfe0d5; --side-muted:#6f8a7a;
+  --accent:#4cc28a; --accent-fg:#06140c; --accent-soft:#173426;
+  --ok:#4cc28a; --warn:#e8a542; --warn-soft:#33270f; --bad:#f07563; --bad-soft:#3a1a16; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1511; --surface:#15201a; --surface-2:#1b2821; --line:#26362d;
+  --fg:#e3ece6; --muted:#93a89b; --side:#091009; --side-fg:#cfe0d5; --side-muted:#6f8a7a;
+  --accent:#4cc28a; --accent-fg:#06140c; --accent-soft:#173426;
+  --ok:#4cc28a; --warn:#e8a542; --warn-soft:#33270f; --bad:#f07563; --bad-soft:#3a1a16; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.45}
+.app{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100%}
+aside{background:var(--side);color:var(--side-fg);padding-block:20px;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:14px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{font-family:var(--f-display);font-weight:700;font-size:19px;letter-spacing:-.01em;color:#fff;padding:4px 10px 18px;display:flex;gap:8px;align-items:center}
+.brand i{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--accent);color:var(--accent-fg);font-style:normal;font-size:14px}
+.navlbl{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--side-muted);padding:14px 10px 6px}
+nav a{display:flex;justify-content:space-between;align-items:center;padding:9px 10px;border-radius:8px;color:var(--side-fg);text-decoration:none;font-weight:500}
+nav a:hover{background:rgba(255,255,255,.06)}
+nav a.on{background:rgba(76,194,138,.16);color:#fff}
+nav a .cnt{font-family:var(--f-num);font-size:11px;background:var(--bad);color:#fff;border-radius:99px;padding:1px 7px}
+main{min-width:0;padding-block:20px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.top h1{font-family:var(--f-display);font-size:22px;margin:0;letter-spacing:-.01em;text-wrap:balance;flex:1}
+.menu-btn{display:none}
+.wrap{max-width:1240px;margin:0 auto}
+button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:8px 14px;border-radius:8px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+button:hover,.btn:hover{border-color:var(--accent)}
+button.pri{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button.danger{color:var(--bad);border-color:var(--bad-soft)}
+button.sm,.btn.sm{padding:4px 10px;font-size:13px}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.5;cursor:not-allowed}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.kpi .l{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.kpi .v{font-family:var(--f-display);font-size:24px;font-weight:700;margin:6px 0 2px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.kpi .s{color:var(--muted);font-size:13px}
+.kpi.bad{background:var(--bad-soft);border-color:transparent}.kpi.bad .v{color:var(--bad)}
+.kpi.link{cursor:pointer}.kpi.link:hover{border-color:var(--accent)}
+.grid2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.panel>header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.panel>header h2{font-family:var(--f-display);font-size:15px;margin:0;font-weight:600}
+.panel .body{padding:16px}
+.muted{color:var(--muted)}
+.chart svg{width:100%;height:auto;display:block}
+.chart text{fill:var(--muted);font-family:var(--f-body);font-size:11px}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);text-align:left;font-weight:600;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tr.click{cursor:pointer}tr.click:hover td{background:var(--surface-2)}
+.num{text-align:right;font-family:var(--f-num);font-size:13px;white-space:nowrap}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;background:var(--surface-2);color:var(--muted);white-space:nowrap}
+.pill.ok{background:var(--accent-soft);color:var(--ok)}.pill.warn{background:var(--warn-soft);color:var(--warn)}.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.toolbar input[type=search]{flex:1;min-width:180px}
+input,select,textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+textarea{min-height:80px;resize:vertical}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--muted);min-width:0}
+.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.form .full{grid-column:1/-1}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button{font-weight:500}.tabs button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.empty{padding:36px 20px;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--fg);font-family:var(--f-display);font-size:16px;margin-bottom:4px}
+.ex{font-size:11px;font-weight:600;color:var(--warn);background:var(--warn-soft);border-radius:4px;padding:0 5px;margin-left:6px}
+.banner{background:var(--warn-soft);color:var(--warn);padding:10px 14px;border-radius:8px;margin-bottom:14px;font-weight:500}
+/* gaveta / modal */
+.scrim{position:fixed;inset:0;background:rgba(5,12,8,.5);z-index:40;display:flex;justify-content:flex-end}
+.drawer{background:var(--bg);width:min(760px,100%);height:100%;overflow:auto;padding-block:max(20px,env(safe-area-inset-top,0px)) 40px;padding-left:20px;padding-right:max(20px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px}
+.drawer h2{font-family:var(--f-display);margin:0;font-size:20px;text-wrap:balance}
+.drawer .hd{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.scrim.center{justify-content:center;align-items:center;padding:16px}
+.modal{background:var(--surface);border-radius:12px;width:min(520px,100%);max-height:100%;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px;border:1px solid var(--line)}
+.modal h3{font-family:var(--f-display);margin:0;font-size:17px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row.end{justify-content:flex-end}
+.dl{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px 18px}
+.dl div span{display:block;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.dl div b{font-weight:600;font-variant-numeric:tabular-nums}
+.calc{background:var(--surface-2);border-radius:8px;padding:12px 14px;display:grid;gap:4px;font-variant-numeric:tabular-nums}
+.calc div{display:flex;justify-content:space-between;gap:10px}
+.calc .t{font-weight:700;border-top:1px solid var(--line);padding-top:6px;margin-top:4px}
+.toast{position:fixed;bottom:max(20px,env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;z-index:60;font-weight:600}
+.msgbox{white-space:pre-wrap;background:var(--surface-2);border-radius:8px;padding:12px;font-size:13px}
+@media (max-width:1000px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:760px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  aside{position:fixed;inset:0 auto 0 0;width:250px;z-index:50;transform:translateX(-100%);transition:transform .2s;padding-top:max(20px,env(safe-area-inset-top,0px))}
+  aside.open{transform:none}
+  .menu-btn{display:inline-flex}
+  .form{grid-template-columns:minmax(0,1fr)}
+  .kpi .v{font-size:20px}
+}
+@media (max-width:420px){.kpis{grid-template-columns:minmax(0,1fr)}}
+@media (prefers-reduced-motion:reduce){aside{transition:none}}
+[hidden]{display:none!important}
+</style>
+
+<div class="app">
+  <aside id="side">
+    <div class="brand"><i>C</i><span id="brandName">CrediControle</span></div>
+    <nav id="nav">
+      <a href="#dashboard" data-v="dashboard">Painel</a>
+      <div class="navlbl">Crédito</div>
+      <a href="#precadastro" data-v="precadastro">Pré-cadastro <span class="cnt" id="cntPre" hidden></span></a>
+      <a href="#clientes" data-v="clientes">Clientes</a>
+      <a href="#contratos" data-v="contratos">Contratos</a>
+      <a href="#inadimplentes" data-v="inadimplentes">Inadimplentes <span class="cnt" id="cntInad" hidden></span></a>
+      <a href="#cobrancas" data-v="cobrancas">Cobranças</a>
+      <div class="navlbl">Financeiro</div>
+      <a href="#caixa" data-v="caixa">Caixa e transações</a>
+      <a href="#ajustes" data-v="ajustes">Configurações</a>
+    </nav>
+  </aside>
+  <main><div class="wrap">
+    <div class="top">
+      <button class="menu-btn sm" id="menuBtn" aria-label="Abrir menu">☰ Menu</button>
+      <h1 id="title">Painel</h1>
+      <div class="row" id="topActions"></div>
+    </div>
+    <div id="banner"></div>
+    <div id="view"><div class="empty"><b>Carregando sua carteira…</b>Conectando ao banco de dados.</div></div>
+  </div></main>
+</div>
+<div id="layer"></div>
+
+<script>
+(function(){
+"use strict";
+const S={clientes:[],contratos:[],transacoes:[],config:{},loaded:{}};
+let db=null, canWrite=true, view="dashboard", sub={};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const BRL=new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"});
+const money=v=>BRL.format(+v||0);
+const r2=v=>Math.round((+v||0)*100)/100;
+const uid=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const pad=n=>String(n).padStart(2,"0");
+const iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const parse=s=>{const [y,m,d]=String(s).split("-").map(Number);return new Date(y,(m||1)-1,d||1)};
+const today=()=>iso(new Date());
+const fdate=s=>s?parse(s).toLocaleDateString("pt-BR"):"—";
+const days=(a,b)=>Math.round((parse(b)-parse(a))/864e5);
+const addDays=(s,n)=>{const d=parse(s);d.setDate(d.getDate()+n);return iso(d)};
+const addMonths=(s,n)=>{const d=parse(s),day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+n);const last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(day,last));return iso(d)};
+const PER={mensal:"Mensal",quinzenal:"Quinzenal",semanal:"Semanal",diaria:"Diária"};
+const MOD={saldo:"Saldo devedor (juros por dia)",simples:"Parcelado (juros simples)",price:"Price (juros compostos)",juros:"Só juros + principal no fim"};
+const isSaldo=c=>!!c&&c.modalidade==="saldo";
+const cfg=k=>{const d={nome:"CrediControle",taxa:20,multa:2,mora:0.33,saldoInicial:0,corteDias:1,msg:"Olá {nome}, tudo bem? Passando para lembrar da parcela {parcela} do seu contrato, no valor de {valor}, com vencimento em {vencimento}. Qualquer dúvida estou à disposição."};return S.config[k]??d[k]};
+
+/* ---------- cálculo ---------- */
+function vencimento(c,k){ // k = 0-based
+  const b=c.primeiroVenc;
+  if(c.periodicidade==="quinzenal")return addDays(b,15*k);
+  if(c.periodicidade==="semanal")return addDays(b,7*k);
+  if(c.periodicidade==="diaria")return addDays(b,k);
+  return addMonths(b,k);
+}
+function gerarParcelas(c){
+  const V=+c.valor,i=(+c.taxa)/100,n=Math.max(1,parseInt(c.nParcelas)||1),out=[];
+  let vals=[];
+  if(c.modalidade==="price"){const p=i>0?V*i/(1-Math.pow(1+i,-n)):V/n;vals=Array(n).fill(r2(p));}
+  else if(c.modalidade==="juros"){vals=Array(n).fill(r2(V*i));vals[n-1]=r2(V*i+V);}
+  else{const tot=r2(V*(1+i*n)),p=r2(tot/n);vals=Array(n).fill(p);vals[n-1]=r2(tot-p*(n-1));}
+  for(let k=0;k<n;k++)out.push({n:k+1,venc:vencimento(c,k),valor:vals[k],pagamentos:[]});
+  return out;
+}
+const pagoP=p=>r2((p.pagamentos||[]).reduce((a,x)=>a+(+x.valor||0),0));
+function encargos(p,c,ref){
+  ref=ref||today();
+  const atraso=Math.max(0,days(p.venc,ref));
+  const multa=atraso>0?r2(p.valor*(+(c.multa??cfg("multa")))/100):0;
+  const mora=atraso>0?r2(p.valor*(+(c.mora??cfg("mora")))/100*atraso):0;
+  const total=r2(p.valor+multa+mora), pago=pagoP(p);
+  return {atraso,multa,mora,total,pago,devido:Math.max(0,r2(total-pago))};
+}
+const quitadaP=p=>!!p.quitada;
+/* saldo:inicio — modalidade "saldo devedor": juros simples por dia corrido (taxa mensal ÷ 30) sobre o saldo,
+   desde a última movimentação; cada pagamento quita primeiro os juros do período e o resto abate o saldo.
+   Juros não pagos ficam no saldo e passam a render juros no movimento seguinte. */
+function extrato(c,ref){
+  ref=ref||today();
+  const td=(+c.taxa)/100/30;
+  const movs=[...(c.movimentos||[])].sort((a,b)=>a.data.localeCompare(b.data)||String(a.criadoEm||"").localeCompare(String(b.criadoEm||"")));
+  let saldo=r2(c.valor),ult=c.dataContrato,pago=0,jurosPagos=0,capitalPago=0;
+  const linhas=[{data:c.dataContrato,tipo:"emprestimo",dias:0,juros:0,valor:r2(c.valor),saldo}];
+  for(const m of movs){
+    const dias=Math.max(0,days(ult,m.data)),juros=r2(saldo*td*dias),v=r2(m.valor),pj=Math.min(v,juros);
+    saldo=r2(saldo+juros-v);pago=r2(pago+v);jurosPagos=r2(jurosPagos+pj);capitalPago=r2(capitalPago+v-pj);ult=m.data;
+    linhas.push({data:m.data,tipo:"pagamento",dias,juros,valor:v,saldo,mov:m});
+  }
+  const quitado=movs.length>0&&saldo<=0.009;
+  const diasHoje=quitado?0:Math.max(0,days(ult,ref)),jurosHoje=quitado?0:r2(saldo*td*diasHoje);
+  return {linhas,saldoBase:Math.max(0,saldo),ultima:ult,diasHoje,jurosHoje,saldoHoje:quitado?0:r2(saldo+jurosHoje),pago,jurosPagos,capitalPago,quitado,taxaDia:td};
+}
+/* saldo:fim */
+function statusC(c){
+  if(c.cancelado)return "cancelado";
+  if(isSaldo(c))return extrato(c).quitado?"quitado":c.vencimento<today()?"atrasado":"ativo";
+  const ps=c.parcelas||[];
+  if(ps.length&&ps.every(quitadaP))return "quitado";
+  const t=today();
+  if(ps.some(p=>!quitadaP(p)&&p.venc<t))return "atrasado";
+  return "ativo";
+}
+const STP={ativo:["Em dia","ok"],atrasado:["Em atraso","bad"],quitado:["Quitado",""],cancelado:["Cancelado",""]};
+const pillC=c=>{const [t,k]=STP[statusC(c)];return `<span class="pill ${k}">${t}</span>`};
+const cli=id=>S.clientes.find(x=>x.id===id)||{nome:"(cliente removido)"};
+const ex=o=>o&&o.exemplo?'<span class="ex">exemplo</span>':"";
+function abertas(){ // todas as parcelas em aberto com contexto
+  const out=[],t=today();
+  for(const c of S.contratos){if(c.cancelado)continue;
+    if(isSaldo(c)){ // uma "parcela" só: o saldo de hoje; a receber no vencimento = saldo com os juros até lá
+      const x=extrato(c);if(x.quitado)continue;
+      const v=c.vencimento,atraso=Math.max(0,days(v,t)),devido=v>t?r2(x.saldoBase*(1+x.taxaDia*Math.max(0,days(x.ultima,v)))):x.saldoHoje;
+      out.push({c,p:{n:1,venc:v,valor:x.saldoHoje},e:{atraso,multa:0,mora:0,total:devido,pago:0,devido}});continue}
+    for(const p of c.parcelas||[])if(!quitadaP(p))out.push({c,p,e:encargos(p,c)});}
+  return out;
+}
+const parcLbl=x=>isSaldo(x.c)?"Saldo":`${x.p.n}/${x.c.parcelas.length}`;
+// Inadimplente = atraso a partir do corte de dias (Configurações) ou contrato marcado à mão, com motivo para o cobrador.
+const corte=()=>Math.max(1,parseInt(cfg("corteDias"))||1);
+const emInad=x=>!!x.c.inad||x.e.atraso>=corte();
+const bannerInad=c=>c.inad&&!["quitado","cancelado"].includes(statusC(c))?`<div class="banner" style="background:var(--bad-soft);color:var(--bad);margin:0">Marcado como inadimplente em ${fdate(c.inad.em)}: ${esc(c.inad.motivo)}</div>`:"";
+const btnInad=c=>c.inad?`<button data-act="desmarcarInad" data-id="${c.id}">Tirar da inadimplência</button>`:`<button data-act="marcarInad" data-id="${c.id}">Marcar inadimplente</button>`;
+const saldoContrato=c=>isSaldo(c)?extrato(c).saldoHoje:r2((c.parcelas||[]).filter(p=>!quitadaP(p)).reduce((a,p)=>a+r2(p.valor-pagoP(p)),0));
+
+/* ---------- banco ---------- */
+async function boot(){
+  try{
+    db=await window.claude?.use?.("db");
+    const user=await window.claude?.use?.("user");
+    if(user){const w=await user.can("data.write");if(w===false)canWrite=false;}
+  }catch(e){db=null}
+  if(!db){$("#view").innerHTML='<div class="empty"><b>Não foi possível abrir o banco de dados</b>Entre na sua conta do claude.ai e abra este link novamente.</div>';return}
+  for(const col of ["clientes","contratos","transacoes"]){
+    db.collection(col).limit(1000).onSnapshot(s=>{S[col]=s.docs.map(d=>({id:d.id,...d.data()}));S.loaded[col]=1;render()},err);
+  }
+  db.doc("config/geral").onSnapshot(s=>{S.config=s.exists?s.data():{};S.loaded.config=1;render()},err);
+}
+function err(e){toast("Erro no banco de dados: "+(e&&e.message||e))}
+async function put(col,obj){
+  if(!canWrite){toast("Você tem acesso só de leitura.");throw new Error("ro")}
+  const {id,...rest}=obj;await db.doc(col+"/"+id).set(rest);
+}
+async function upd(col,id,data){if(!canWrite){toast("Você tem acesso só de leitura.");throw new Error("ro")}await db.doc(col+"/"+id).update(data)}
+async function del(col,id){if(!canWrite){toast("Você tem acesso só de leitura.");throw new Error("ro")}await db.doc(col+"/"+id).delete()}
+
+/* ---------- UI util ---------- */
+let toastT;
+function toast(m){clearTimeout(toastT);const el=document.createElement("div");el.className="toast";el.textContent=m;document.querySelectorAll(".toast").forEach(x=>x.remove());document.body.appendChild(el);toastT=setTimeout(()=>el.remove(),3200)}
+function openDrawer(html){$("#layer").innerHTML=`<div class="scrim" data-close="1"><div class="drawer" role="dialog" aria-modal="true">${html}</div></div>`}
+function openModal(html){const l=document.createElement("div");l.className="scrim center";l.dataset.close="1";l.innerHTML=`<div class="modal" role="dialog" aria-modal="true">${html}</div>`;$("#layer").appendChild(l);const f=l.querySelector("input,select,textarea");f&&f.focus()}
+function closeTop(){const ls=$("#layer").querySelectorAll(".scrim");ls.length&&ls[ls.length-1].remove()}
+function confirmar(msg,ok,label="Confirmar"){openModal(`<h3>${esc(msg)}</h3><div class="row end"><button data-act="close">Voltar</button><button class="pri danger" id="cOk">${esc(label)}</button></div>`);$("#cOk").onclick=async()=>{closeTop();await ok()}}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeTop()});
+const formData=f=>Object.fromEntries(new FormData(f).entries());
+
+/* ---------- gráficos ---------- */
+function bars(data,{h=200,color="var(--accent)",lblEvery=1}={}){
+  const W=640,H=h,L=70,R=10,T=12,B=26,max=Math.max(1,...data.map(d=>d.v));
+  const step=niceStep(max/4),top=Math.ceil(max/step)*step||1;
+  const bw=(W-L-R)/data.length;let g="";
+  for(let y=0;y<=top+1e-9;y+=step){const py=T+(H-T-B)*(1-y/top);g+=`<line x1="${L}" x2="${W-R}" y1="${py}" y2="${py}" stroke="var(--line)" stroke-width="1"/><text x="${L-8}" y="${py+4}" text-anchor="end">${short(y)}</text>`}
+  data.forEach((d,i)=>{const bh=(H-T-B)*(d.v/top),x=L+i*bw+bw*.18,y=H-B-bh;
+    g+=`<rect x="${x}" y="${y}" width="${bw*.64}" height="${Math.max(0,bh)}" rx="2" fill="${d.hi?"var(--fg)":color}"><title>${esc(d.t)}: ${money(d.v)}</title></rect>`;
+    if(i%lblEvery===0||i===data.length-1)g+=`<text x="${L+i*bw+bw/2}" y="${H-8}" text-anchor="middle">${esc(d.l)}</text>`});
+  return `<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>`;
+}
+function niceStep(x){if(x<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(x))),m=x/p;return (m<=1?1:m<=2?2:m<=5?5:10)*p}
+const short=v=>v>=1e6?"R$ "+(v/1e6).toLocaleString("pt-BR",{maximumFractionDigits:1})+" mi":v>=1e3?"R$ "+(v/1e3).toLocaleString("pt-BR",{maximumFractionDigits:1})+" mil":"R$ "+Math.round(v);
+
+/* ---------- views ---------- */
+const TITLES={dashboard:"Painel",precadastro:"Pré-cadastro",clientes:"Clientes",contratos:"Contratos",inadimplentes:"Inadimplentes",cobrancas:"Cobranças",caixa:"Caixa e transações",ajustes:"Configurações"};
+const ui={cliQ:"",cliSt:"todos",conQ:"",conSt:"todos",cobTab:"hoje",cxMes:today().slice(0,7)};
+
+function render(){
+  if(!(S.loaded.clientes&&S.loaded.contratos&&S.loaded.transacoes&&S.loaded.config))return;
+  $("#brandName").textContent=cfg("nome");
+  document.querySelectorAll("#nav a").forEach(a=>a.classList.toggle("on",a.dataset.v===view));
+  $("#title").textContent=TITLES[view];
+  const pre=S.clientes.filter(c=>c.status==="pre").length;
+  const inad=new Set(abertas().filter(emInad).map(x=>x.c.clienteId)).size;
+  setCnt("#cntPre",pre);setCnt("#cntInad",inad);
+  $("#banner").innerHTML=canWrite?"":'<div class="banner">Você está vendo esta carteira em modo somente leitura.</div>';
+  const act=$("#topActions");
+  act.innerHTML=({clientes:'<button class="pri" data-act="novoCliente">Novo cliente</button>',precadastro:'<button class="pri" data-act="novoCliente" data-pre="1">Novo pré-cadastro</button>',contratos:'<button class="pri" data-act="novoContrato">Novo contrato</button>',dashboard:'<button class="pri" data-act="novoContrato">Novo contrato</button>',caixa:'<button class="pri" data-act="novoLanc">Novo lançamento</button>'})[view]||"";
+  const v=$("#view"),scroll=v.querySelector(".keep")?.scrollTop;
+  v.innerHTML=VIEWS[view]();
+  const k=v.querySelector(".keep");if(k&&scroll)k.scrollTop=scroll;
+  restoreFocus();
+}
+function setCnt(sel,n){const e=$(sel);e.hidden=!n;e.textContent=n}
+let focusId=null,focusPos=0;
+function restoreFocus(){if(!focusId)return;const e=document.getElementById(focusId);if(e){e.focus();try{e.setSelectionRange(focusPos,focusPos)}catch(_){}}}
+
+const VIEWS={};
+VIEWS.dashboard=()=>{
+  const t=today(),ab=abertas();
+  const totalEmp=S.contratos.filter(c=>!c.cancelado).reduce((a,c)=>a+(+c.valor||0),0);
+  const recebido=S.transacoes.filter(x=>x.tipo==="entrada"&&x.contratoId).reduce((a,x)=>a+(+x.valor||0),0);
+  const quit=S.contratos.filter(c=>statusC(c)==="quitado").length;
+  const ativos=S.contratos.filter(c=>["ativo","atrasado"].includes(statusC(c)));
+  const saldo=ab.reduce((a,x)=>a+r2(x.p.valor-x.e.pago),0);
+  const atras=ab.filter(x=>x.e.atraso>0),inadL=ab.filter(emInad);
+  const vAtras=inadL.reduce((a,x)=>a+r2(x.p.valor-x.e.pago),0);
+  const cAtras=new Set(inadL.map(x=>x.c.id)).size;
+  const taxa=saldo>0?vAtras/saldo*100:0;
+  const d=new Date(),dow=(d.getDay()+6)%7,ini=addDays(t,-dow),fim=addDays(ini,6),mes=t.slice(0,7);
+  const soma=f=>ab.filter(f).reduce((a,x)=>a+x.e.devido,0);
+  const hoje=soma(x=>x.p.venc===t),sem=soma(x=>x.p.venc>=ini&&x.p.venc<=fim&&x.p.venc>=t),mesV=soma(x=>x.p.venc.slice(0,7)===mes&&x.p.venc>=t);
+  const inadMes=atras.filter(x=>x.p.venc.slice(0,7)===mes);
+  const semana=Math.ceil(((parse(t)-new Date(d.getFullYear(),0,1))/864e5+new Date(d.getFullYear(),0,1).getDay()+1)/7);
+  // recebimentos 30 dias
+  const rec=[];for(let i=29;i>=0;i--){const dd=addDays(t,-i);rec.push({l:fdate(dd).slice(0,5),t:fdate(dd),v:S.transacoes.filter(x=>x.tipo==="entrada"&&x.contratoId&&x.data===dd).reduce((a,x)=>a+(+x.valor||0),0),hi:i===0})}
+  // inadimplência 12 meses (valor vencido e ainda em aberto, por mês de vencimento)
+  const inm=[];for(let i=11;i>=0;i--){const m=addMonths(mes+"-01",-i).slice(0,7),dm=parse(m+"-01");inm.push({l:dm.toLocaleDateString("pt-BR",{month:"short"}).replace(".",""),t:dm.toLocaleDateString("pt-BR",{month:"long",year:"numeric"}),v:atras.filter(x=>x.p.venc.slice(0,7)===m).reduce((a,x)=>a+r2(x.p.valor-x.e.pago),0)})}
+  const prox=ab.filter(x=>x.p.venc>=t).sort((a,b)=>a.p.venc.localeCompare(b.p.venc)).slice(0,6);
+  const emptyNote=!S.contratos.length?`<div class="panel" style="margin-bottom:14px"><div class="empty"><b>Sua carteira ainda está vazia</b>Cadastre um cliente e crie o primeiro contrato. Os indicadores abaixo se preenchem sozinhos.</div></div>`:"";
+  return `${emptyNote}<div class="kpis">
+    ${kpi("Total emprestado",money(totalEmp),`${S.contratos.filter(c=>!c.cancelado).length} contratos`)}
+    ${kpi("Total recebido",money(recebido),`${quit} contratos quitados`)}
+    ${kpi("Saldo a receber",money(saldo),`${ativos.length} contratos ativos`)}
+    ${kpi("Taxa de inadimplência",taxa.toLocaleString("pt-BR",{maximumFractionDigits:1})+"%",`${money(vAtras)} em ${cAtras} contratos`,taxa>0?"bad":"")}
+  </div><div class="kpis">
+    ${kpi("A receber hoje",money(hoje),fdate(t),"link","cobrancas","hoje")}
+    ${kpi("A receber esta semana",money(sem),"Semana "+semana,"link","cobrancas","semana")}
+    ${kpi("A receber este mês",money(mesV),parse(t).toLocaleDateString("pt-BR",{month:"long",year:"numeric"}),"link","cobrancas","mes")}
+    ${kpi("Inadimplência do mês",money(inadMes.reduce((a,x)=>a+x.e.devido,0)),`${new Set(inadMes.map(x=>x.c.id)).size} contratos atrasados`,"bad link","inadimplentes")}
+  </div>
+  <div class="grid2" style="margin-bottom:14px">
+    <section class="panel chart"><header><h2>Recebimentos nos últimos 30 dias</h2><span class="muted">por dia</span></header><div class="body">${bars(rec,{lblEvery:5})}</div></section>
+    <section class="panel chart"><header><h2>Inadimplência nos últimos 12 meses</h2><span class="muted">valor vencido em aberto, por mês de vencimento</span></header><div class="body">${bars(inm,{color:"var(--bad)"})}</div></section>
+  </div>
+  <section class="panel"><header><h2>Próximos vencimentos</h2><a class="btn sm" href="#cobrancas">Ver cobranças</a></header>
+  ${prox.length?`<div class="tbl"><table><thead><tr><th>Vencimento</th><th>Cliente</th><th>Parcela</th><th class="num">Valor</th><th></th></tr></thead><tbody>${prox.map(x=>`<tr class="click" data-act="verContrato" data-id="${x.c.id}"><td>${fdate(x.p.venc)}</td><td>${esc(cli(x.c.clienteId).nome)}${ex(x.c)}</td><td>${parcLbl(x)}</td><td class="num">${money(x.e.devido)}</td><td><button class="sm" data-act="pagar" data-id="${x.c.id}" data-n="${x.p.n}">Receber</button></td></tr>`).join("")}</tbody></table></div>`:`<div class="empty">Nenhuma parcela a vencer.</div>`}</section>`;
+};
+function kpi(l,v,s,cls="",go="",tab=""){return `<div class="kpi ${cls}" ${go?`data-act="go" data-go="${go}" data-tab="${tab}" role="link" tabindex="0"`:""}><div class="l">${l}</div><div class="v">${v}</div><div class="s">${esc(s)}</div></div>`}
+
+function cliRows(list){
+  if(!list.length)return `<div class="empty"><b>Nenhum cliente aqui</b>Use “Novo cliente” para cadastrar o primeiro.</div>`;
+  return `<div class="tbl"><table><thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Situação</th><th class="num">Contratos</th><th class="num">Saldo devedor</th></tr></thead><tbody>${list.map(c=>{
+    const cs=S.contratos.filter(k=>k.clienteId===c.id&&!k.cancelado),sd=cs.reduce((a,k)=>a+saldoContrato(k),0),at=cs.some(k=>statusC(k)==="atrasado");
+    const st=c.status==="pre"?'<span class="pill warn">Pré-cadastro</span>':c.status==="bloqueado"?'<span class="pill bad">Bloqueado</span>':at?'<span class="pill bad">Em atraso</span>':'<span class="pill ok">Ativo</span>';
+    return `<tr class="click" data-act="verCliente" data-id="${c.id}"><td><b>${esc(c.nome)}</b>${ex(c)}</td><td>${esc(c.cpf||"—")}</td><td>${esc(c.telefone||"—")}</td><td>${st}</td><td class="num">${cs.length}</td><td class="num">${money(sd)}</td></tr>`}).join("")}</tbody></table></div>`;
+}
+VIEWS.clientes=()=>{
+  const q=ui.cliQ.toLowerCase();
+  let l=S.clientes.filter(c=>c.status!=="pre").filter(c=>!q||[c.nome,c.cpf,c.telefone].join(" ").toLowerCase().includes(q));
+  if(ui.cliSt==="atraso")l=l.filter(c=>S.contratos.some(k=>k.clienteId===c.id&&statusC(k)==="atrasado"));
+  if(ui.cliSt==="bloqueado")l=l.filter(c=>c.status==="bloqueado");
+  l.sort((a,b)=>a.nome.localeCompare(b.nome));
+  return `<div class="toolbar"><input type="search" id="cliQ" placeholder="Buscar por nome, CPF ou telefone" value="${esc(ui.cliQ)}" aria-label="Buscar clientes"><div class="tabs">${tabs("cliSt",{todos:"Todos",atraso:"Em atraso",bloqueado:"Bloqueados"})}</div></div><section class="panel">${cliRows(l)}</section>`;
+};
+VIEWS.precadastro=()=>{
+  const l=S.clientes.filter(c=>c.status==="pre").sort((a,b)=>(b.criadoEm||"").localeCompare(a.criadoEm||""));
+  return `<p class="muted" style="margin-top:0">Pessoas interessadas que ainda não foram aprovadas. Ao aprovar, o cadastro vai para Clientes e já pode receber contratos.</p><section class="panel">${l.length?`<div class="tbl"><table><thead><tr><th>Nome</th><th>Telefone</th><th>Origem</th><th>Valor pretendido</th><th>Indicação</th><th>Cadastrado em</th><th></th></tr></thead><tbody>${l.map(c=>`<tr><td><b>${esc(c.nome)}</b>${ex(c)}${/^Atenção/.test(c.obs||"")?`<div class="muted" style="color:var(--warn)">${esc(c.obs)}</div>`:""}</td><td>${esc(c.telefone||"—")}</td><td>${c.origem==="link"?`<span class="pill ok">Link${c.franquia?" · "+esc(c.franquia):""}</span>`:'<span class="pill">Manual</span>'}</td><td class="num">${c.valorPretendido?money(c.valorPretendido):"—"}</td><td>${esc(c.indicacao||"—")}</td><td>${fdate((c.criadoEm||"").slice(0,10))}</td><td><div class="row"><button class="sm pri" data-act="aprovar" data-id="${c.id}">Aprovar</button><button class="sm" data-act="verCliente" data-id="${c.id}">Abrir</button><button class="sm danger" data-act="recusar" data-id="${c.id}">Recusar</button></div></td></tr>`).join("")}</tbody></table></div>`:`<div class="empty"><b>Nenhum pré-cadastro pendente</b>Use “Novo pré-cadastro” quando alguém pedir um empréstimo.</div>`}</section>`;
+};
+function tabs(key,opts){return Object.entries(opts).map(([k,l])=>`<button class="sm ${ui[key]===k?"on":""}" data-act="tab" data-k="${key}" data-v="${k}">${l}</button>`).join("")}
+function conRows(list){
+  if(!list.length)return `<div class="empty"><b>Nenhum contrato aqui</b>Use “Novo contrato” para registrar um empréstimo.</div>`;
+  return `<div class="tbl"><table><thead><tr><th>Cliente</th><th>Início</th><th>Modalidade</th><th class="num">Emprestado</th><th class="num">Taxa</th><th class="num">Pagas</th><th class="num">Saldo</th><th>Situação</th></tr></thead><tbody>${list.map(c=>{const ps=c.parcelas||[];return `<tr class="click" data-act="verContrato" data-id="${c.id}"><td><b>${esc(cli(c.clienteId).nome)}</b>${ex(c)}</td><td>${fdate(c.dataContrato)}</td><td>${MOD[c.modalidade]||""}<div class="muted">${isSaldo(c)?"vence "+fdate(c.vencimento):PER[c.periodicidade]}</div></td><td class="num">${money(c.valor)}</td><td class="num">${(+c.taxa).toLocaleString("pt-BR")}%${isSaldo(c)?" a.m.":""}</td><td class="num">${isSaldo(c)?(c.movimentos||[]).length+" pgto":ps.filter(quitadaP).length+"/"+ps.length}</td><td class="num">${money(saldoContrato(c))}</td><td>${pillC(c)}${c.inad&&!["quitado","cancelado"].includes(statusC(c))?' <span class="pill bad">Inadimplente</span>':""}</td></tr>`}).join("")}</tbody></table></div>`;
+}
+VIEWS.contratos=()=>{
+  const q=ui.conQ.toLowerCase();
+  let l=S.contratos.filter(c=>!q||cli(c.clienteId).nome.toLowerCase().includes(q));
+  if(ui.conSt!=="todos")l=l.filter(c=>statusC(c)===ui.conSt);
+  l.sort((a,b)=>(b.dataContrato||"").localeCompare(a.dataContrato||""));
+  return `<div class="toolbar"><input type="search" id="conQ" placeholder="Buscar por cliente" value="${esc(ui.conQ)}" aria-label="Buscar contratos"><div class="tabs">${tabs("conSt",{todos:"Todos",ativo:"Em dia",atrasado:"Em atraso",quitado:"Quitados",cancelado:"Cancelados"})}</div></div><section class="panel">${conRows(l)}</section>`;
+};
+VIEWS.inadimplentes=()=>{
+  const at=abertas().filter(emInad),by={},cd=corte(),hoje=x=>isSaldo(x.c)?x.p.valor:x.e.devido; // saldo: o de hoje, não o projetado até o vencimento
+  for(const x of at){(by[x.c.clienteId]=by[x.c.clienteId]||[]).push(x)}
+  const rows=Object.entries(by).map(([cid,xs])=>({c:cli(cid),xs,tot:xs.reduce((a,x)=>a+hoje(x),0),max:Math.max(...xs.map(x=>x.e.atraso)),mot:[...new Set(xs.filter(x=>x.c.inad).map(x=>x.c.inad.motivo))]})).sort((a,b)=>b.max-a.max);
+  const tot=rows.reduce((a,r)=>a+r.tot,0);
+  const nota=`<p class="muted" style="margin-top:0">Entram aqui contratos com ${cd} dia${cd>1?"s":""} ou mais de atraso e os marcados como inadimplentes. O corte de dias fica em Configurações.</p>`;
+  if(!rows.length)return nota+`<section class="panel"><div class="empty"><b>Nenhum cliente inadimplente</b>Quando um contrato passar do corte de dias, ou for marcado como inadimplente, ele aparece aqui.</div></section>`;
+  return nota+`<div class="kpis">${kpi("Clientes inadimplentes",rows.length,"no corte de dias ou marcados")}${kpi("Contratos",new Set(at.map(x=>x.c.id)).size,"em aberto")}${kpi("Total devido hoje",money(tot),"com encargos","bad")}${kpi("Maior atraso",rows[0].max+" dias",rows[0].c.nome)}</div>
+  <section class="panel"><div class="tbl"><table><thead><tr><th>Cliente</th><th>Telefone</th><th class="num">Parcelas</th><th class="num">Dias de atraso</th><th class="num">Valor original</th><th class="num">Encargos</th><th class="num">Total devido</th><th>Motivo</th><th></th></tr></thead><tbody>${rows.map(r=>{const orig=r.xs.reduce((a,x)=>a+x.p.valor-x.e.pago,0);return `<tr><td><b>${esc(r.c.nome)}</b>${ex(r.c)}</td><td>${esc(r.c.telefone||"—")}</td><td class="num">${r.xs.length}</td><td class="num">${r.max?`<span class="pill ${r.max>30?"bad":"warn"}">${r.max}</span>`:'<span class="pill bad">marcado</span>'}</td><td class="num">${money(orig)}</td><td class="num">${money(r.tot-orig)}</td><td class="num"><b>${money(r.tot)}</b></td><td>${r.mot.length?esc(r.mot.join(" · ")):'<span class="muted">—</span>'}</td><td><div class="row"><button class="sm" data-act="cobrar" data-id="${r.xs[0].c.id}" data-n="${r.xs[0].p.n}">Cobrar</button><button class="sm" data-act="verContrato" data-id="${r.xs[0].c.id}">Contrato</button></div></td></tr>`}).join("")}</tbody></table></div></section>`;
+};
+VIEWS.cobrancas=()=>{
+  const t=today(),ab=abertas();
+  const f={hoje:x=>x.p.venc===t,semana:x=>x.p.venc>=t&&x.p.venc<=addDays(t,7),mes:x=>x.p.venc>=t&&x.p.venc.slice(0,7)===t.slice(0,7),atrasadas:x=>x.e.atraso>0};
+  const l=ab.filter(f[ui.cobTab]).sort((a,b)=>a.p.venc.localeCompare(b.p.venc));
+  const tot=l.reduce((a,x)=>a+x.e.devido,0);
+  return `<div class="toolbar"><div class="tabs">${tabs("cobTab",{hoje:"Vencem hoje",semana:"Próximos 7 dias",mes:"Restante do mês",atrasadas:"Atrasadas"})}</div><span class="muted" style="margin-left:auto">${l.length} parcelas · <b>${money(tot)}</b></span></div>
+  <section class="panel">${l.length?`<div class="tbl"><table><thead><tr><th>Vencimento</th><th>Cliente</th><th>Telefone</th><th class="num">Parcela</th><th class="num">Valor a cobrar</th><th></th></tr></thead><tbody>${l.map(x=>{const cl=cli(x.c.clienteId);return `<tr><td>${fdate(x.p.venc)}${x.e.atraso?` <span class="pill bad">${x.e.atraso}d</span>`:""}</td><td><b>${esc(cl.nome)}</b>${ex(x.c)}</td><td>${esc(cl.telefone||"—")}</td><td class="num">${parcLbl(x)}</td><td class="num">${money(x.e.devido)}</td><td><div class="row"><button class="sm" data-act="cobrar" data-id="${x.c.id}" data-n="${x.p.n}">Mensagem</button><button class="sm pri" data-act="pagar" data-id="${x.c.id}" data-n="${x.p.n}">Receber</button></div></td></tr>`}).join("")}</tbody></table></div>`:`<div class="empty"><b>Nada para cobrar neste filtro</b>Troque a aba para ver outros vencimentos.</div>`}</section>`;
+};
+VIEWS.caixa=()=>{
+  const ent=S.transacoes.filter(x=>x.tipo==="entrada").reduce((a,x)=>a+(+x.valor||0),0);
+  const sai=S.transacoes.filter(x=>x.tipo==="saida").reduce((a,x)=>a+(+x.valor||0),0);
+  const saldo=(+cfg("saldoInicial")||0)+ent-sai;
+  const m=ui.cxMes,l=S.transacoes.filter(x=>(x.data||"").slice(0,7)===m).sort((a,b)=>(b.data+b.criadoEm).localeCompare(a.data+a.criadoEm));
+  const me=l.filter(x=>x.tipo==="entrada").reduce((a,x)=>a+(+x.valor||0),0),ms=l.filter(x=>x.tipo==="saida").reduce((a,x)=>a+(+x.valor||0),0);
+  return `<div class="kpis">${kpi("Saldo em caixa",money(saldo),"saldo inicial + entradas − saídas")}${kpi("Entradas no mês",money(me),l.filter(x=>x.tipo==="entrada").length+" lançamentos")}${kpi("Saídas no mês",money(ms),l.filter(x=>x.tipo==="saida").length+" lançamentos")}${kpi("Resultado do mês",money(me-ms),"entradas − saídas",me-ms<0?"bad":"")}</div>
+  <div class="toolbar"><label class="f" style="flex-direction:row;align-items:center;gap:8px">Mês <input type="month" id="cxMes" value="${m}" style="width:auto"></label></div>
+  <section class="panel">${l.length?`<div class="tbl"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Forma</th><th class="num">Valor</th><th></th></tr></thead><tbody>${l.map(x=>`<tr><td>${fdate(x.data)}</td><td>${esc(x.descricao)}${ex(x)}</td><td>${esc(x.categoria||"—")}</td><td>${esc(x.forma||"—")}</td><td class="num" style="color:var(${x.tipo==="entrada"?"--ok":"--bad"})">${x.tipo==="entrada"?"+":"−"} ${money(x.valor)}</td><td>${x.contratoId?`<button class="sm" data-act="verContrato" data-id="${x.contratoId}">Contrato</button>`:`<button class="sm danger" data-act="delLanc" data-id="${x.id}">Excluir</button>`}</td></tr>`).join("")}</tbody></table></div>`:`<div class="empty"><b>Sem lançamentos neste mês</b>Empréstimos concedidos e parcelas recebidas entram aqui automaticamente. Despesas e aportes você lança em “Novo lançamento”.</div>`}</section>`;
+};
+VIEWS.ajustes=()=>`<section class="panel"><header><h2>Padrões da carteira</h2></header><div class="body"><form id="fCfg" class="form">
+  <label class="f full">Nome exibido no sistema<input name="nome" id="cfgNome" value="${esc(cfg("nome"))}" required></label>
+  <label class="f">Taxa de juros padrão (% por período)<input name="taxa" id="cfgTaxa" type="number" step="0.01" min="0" value="${cfg("taxa")}"></label>
+  <label class="f">Saldo inicial do caixa (R$)<input name="saldoInicial" id="cfgSaldo" type="number" step="0.01" value="${cfg("saldoInicial")}"></label>
+  <label class="f">Multa por atraso (% da parcela, uma vez)<input name="multa" id="cfgMulta" type="number" step="0.01" min="0" value="${cfg("multa")}"></label>
+  <label class="f">Juros de mora (% da parcela por dia)<input name="mora" id="cfgMora" type="number" step="0.001" min="0" value="${cfg("mora")}"></label>
+  <label class="f">Dias de atraso para entrar em Inadimplentes<input name="corteDias" id="cfgCorte" type="number" step="1" min="1" value="${corte()}"><span class="muted" style="font-weight:400">Contratos marcados à mão entram antes disso.</span></label>
+  <label class="f full">Mensagem de cobrança<textarea name="msg" id="cfgMsg">${esc(cfg("msg"))}</textarea><span class="muted" style="font-weight:400">Use {nome}, {parcela}, {valor}, {vencimento} e {atraso}.</span></label>
+  <label class="f full">Nome da empresa no formulário público de pré-cadastro<input name="empresaPublica" id="cfgEmpresa" value="${esc(cfg("empresaPublica")||"")}" placeholder="Quem recebe os dados (obrigatório pela LGPD)"></label>
+  <label class="f full">Texto de privacidade do formulário público<textarea name="avisoPrivacidade" id="cfgAviso" placeholder="Deixe vazio para usar o texto padrão">${esc(cfg("avisoPrivacidade")||"")}</textarea></label>
+  <div class="row full"><button class="pri" type="submit">Salvar configurações</button></div></form></div></section>
+  <section class="panel" style="margin-top:14px"><header><h2>Dados de exemplo</h2></header><div class="body"><p style="margin-top:0">Registros marcados como <span class="ex">exemplo</span> servem só para você conhecer o sistema. Remova todos antes de começar com seus clientes reais.</p><button class="danger" data-act="limparEx" ${[...S.clientes,...S.contratos,...S.transacoes].some(x=>x.exemplo)?"":"disabled"}>Remover dados de exemplo</button></div></section>`;
+
+/* ---------- detalhes ---------- */
+function verCliente(id){
+  const c=S.clientes.find(x=>x.id===id);if(!c)return;
+  const cs=S.contratos.filter(k=>k.clienteId===id).sort((a,b)=>(b.dataContrato||"").localeCompare(a.dataContrato||""));
+  openDrawer(`<div class="hd"><div><h2>${esc(c.nome)}${ex(c)}</h2><div class="muted">${c.status==="pre"?"Pré-cadastro":c.status==="bloqueado"?"Bloqueado":"Cliente ativo"}</div></div><button data-act="close" aria-label="Fechar">Fechar</button></div>
+  <div class="panel"><div class="body dl">${[["CPF",c.cpf],["Telefone",c.telefone],["E-mail",c.email],["Endereço",c.endereco],["Indicação",c.indicacao],["Renda mensal",c.renda?money(c.renda):""],["Valor pretendido",c.valorPretendido?money(c.valorPretendido):""],["Empresa",c.empresa],["Tempo de carteira",c.tempoRegistro],["Origem",c.origem==="link"?"Link de pré-cadastro"+(c.franquia?" · "+c.franquia:""):"Cadastro manual"],["Cadastrado em",fdate((c.criadoEm||"").slice(0,10))]].map(([k,v])=>`<div><span>${k}</span><b>${esc(v||"—")}</b></div>`).join("")}${c.referencias?`<div style="grid-column:1/-1;white-space:pre-line"><span>Contatos de referência</span>${esc(c.referencias)}</div>`:""}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
+  <div class="row"><button data-act="editCliente" data-id="${id}">Editar dados</button>${c.status!=="pre"?`<button class="pri" data-act="novoContrato" data-cli="${id}">Novo contrato</button>`:`<button class="pri" data-act="aprovar" data-id="${id}">Aprovar cadastro</button>`}<button data-act="bloquear" data-id="${id}">${c.status==="bloqueado"?"Desbloquear":"Bloquear"}</button><button class="danger" data-act="delCliente" data-id="${id}">Excluir</button></div>
+  <section class="panel"><header><h2>Contratos</h2></header>${conRows(cs)}</section>`);
+}
+function verContratoSaldo(c){
+  const cl=cli(c.clienteId),x=extrato(c),t=today(),aberto=!c.cancelado&&!x.quitado,atraso=Math.max(0,days(c.vencimento,t));
+  const ren=c.renegociacoes||[],tx=(+c.taxa).toLocaleString("pt-BR",{maximumFractionDigits:4});
+  const linhas=x.linhas.map((l,k)=>`<tr><td>${k+1}</td><td>${fdate(l.data)}<div class="muted">${l.tipo==="emprestimo"?"Empréstimo":"Pagamento"+(l.mov.forma?" · "+esc(l.mov.forma):"")}</div></td><td class="num">${l.dias}</td><td class="num">${l.tipo==="emprestimo"?"—":money(l.juros)}</td><td class="num" style="color:var(${l.tipo==="emprestimo"?"--fg":"--ok"})">${money(l.valor)}</td><td class="num">${money(Math.max(0,l.saldo))}</td><td>${l.mov&&k===x.linhas.length-1?`<button class="sm" data-act="estornarSaldo" data-id="${c.id}">Estornar</button>`:""}</td></tr>`).join("");
+  const hoje=aberto?`<tr><td></td><td><i>Hoje, ${fdate(t)}</i><div class="muted">previsão, nada lançado</div></td><td class="num">${x.diasHoje}</td><td class="num">${money(x.jurosHoje)}</td><td class="num">—</td><td class="num"><b>${money(x.saldoHoje)}</b></td><td></td></tr>`:"";
+  openDrawer(`<div class="hd"><div><h2>Contrato de ${esc(cl.nome)}${ex(c)}</h2><div class="row" style="margin-top:4px">${pillC(c)}<span class="muted">${MOD.saldo} · ${tx}% ao mês</span></div></div><button data-act="close">Fechar</button></div>
+  ${aberto&&atraso?`<div class="banner" style="background:var(--bad-soft);color:var(--bad);margin:0">Vencido há ${atraso} dia${atraso>1?"s":""} (venceu em ${fdate(c.vencimento)})${ren.length?` · renegociado ${ren.length}×`:""}</div>`:""}${bannerInad(c)}
+  <div class="kpis" style="grid-template-columns:repeat(2,minmax(0,1fr));margin:0">${kpi("Saldo devedor hoje",money(x.saldoHoje),x.quitado?"contrato quitado":"inclui "+money(x.jurosHoje)+" de juros",aberto&&atraso?"bad":"")}${kpi("Só os juros até hoje",money(x.jurosHoje),x.diasHoje+" dias desde "+fdate(x.ultima))}</div>
+  <div class="panel"><div class="body dl">${[["Valor emprestado",money(c.valor)],["Taxa",`${tx}% ao mês · ${(x.taxaDia*100).toLocaleString("pt-BR",{maximumFractionDigits:3})}% ao dia`],["Data do contrato",fdate(c.dataContrato)],["Vencimento",fdate(c.vencimento)+(ren.length?` (reneg. ${ren.length}×)`:"")],["Total pago",money(x.pago)],["Juros pagos",money(x.jurosPagos)],["Capital pago",money(x.capitalPago)],["Dias desde a última transação",days(x.ultima,t)]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("")}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
+  <section class="panel"><header><h2>Cronograma de transações</h2><span class="muted">juros = saldo × ${tx}% ÷ 30 × dias</span></header><div class="tbl"><table><thead><tr><th>#</th><th>Data</th><th class="num">Dias</th><th class="num">Juros do período</th><th class="num">Valor</th><th class="num">Saldo devedor</th><th></th></tr></thead><tbody>${linhas}${hoje}</tbody></table></div></section>
+  ${ren.length?`<section class="panel"><header><h2>Renegociações de vencimento</h2></header><div class="tbl"><table><thead><tr><th>Em</th><th>De</th><th>Para</th><th>Motivo</th></tr></thead><tbody>${ren.map(r=>`<tr><td>${fdate(r.data)}</td><td>${fdate(r.de)}</td><td>${fdate(r.para)}</td><td>${esc(r.motivo||"—")}</td></tr>`).join("")}</tbody></table></div></section>`:""}
+  <div class="row">${aberto?`<button class="pri" data-act="pagar" data-id="${c.id}">Registrar pagamento</button><button data-act="renegociar" data-id="${c.id}">Renegociar vencimento</button><button data-act="cobrar" data-id="${c.id}">Mensagem</button>${btnInad(c)}<button data-act="cancelarC" data-id="${c.id}">Cancelar contrato</button>`:""}<button class="danger" data-act="delContrato" data-id="${c.id}">Excluir contrato</button><button data-act="verCliente" data-id="${c.clienteId}">Ver cliente</button></div>`);
+}
+function verContrato(id){
+  const c=S.contratos.find(x=>x.id===id);if(!c)return;
+  if(isSaldo(c))return verContratoSaldo(c);
+  const cl=cli(c.clienteId),ps=c.parcelas||[];
+  const totalC=r2(ps.reduce((a,p)=>a+p.valor,0)),pago=r2(ps.reduce((a,p)=>a+pagoP(p),0));
+  openDrawer(`<div class="hd"><div><h2>Contrato de ${esc(cl.nome)}${ex(c)}</h2><div class="row" style="margin-top:4px">${pillC(c)}<span class="muted">${MOD[c.modalidade]} · ${PER[c.periodicidade]}</span></div></div><button data-act="close">Fechar</button></div>
+  ${bannerInad(c)}<div class="panel"><div class="body dl">${[["Valor emprestado",money(c.valor)],["Taxa",(+c.taxa).toLocaleString("pt-BR")+"% ao período"],["Total do contrato",money(totalC)],["Lucro previsto",money(totalC-c.valor)],["Já recebido",money(pago)],["Saldo em aberto",money(saldoContrato(c))],["Data do contrato",fdate(c.dataContrato)],["Multa / mora",`${c.multa}% + ${c.mora}%/dia`]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("")}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
+  <section class="panel"><header><h2>Parcelas</h2></header><div class="tbl"><table><thead><tr><th>#</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Encargos</th><th class="num">Pago</th><th>Situação</th><th></th></tr></thead><tbody>${ps.map(p=>{const e=encargos(p,c);const st=quitadaP(p)?`<span class="pill ok">Paga ${fdate((p.pagamentos.at(-1)||{}).data)}</span>`:e.atraso?`<span class="pill bad">${e.atraso} dias</span>`:e.pago>0?'<span class="pill warn">Parcial</span>':'<span class="pill">Aberta</span>';
+    return `<tr><td>${p.n}</td><td>${fdate(p.venc)}</td><td class="num">${money(p.valor)}</td><td class="num">${quitadaP(p)?"—":money(e.multa+e.mora)}</td><td class="num">${money(e.pago)}</td><td>${st}</td><td><div class="row">${!quitadaP(p)&&!c.cancelado?`<button class="sm pri" data-act="pagar" data-id="${c.id}" data-n="${p.n}">Receber</button><button class="sm" data-act="cobrar" data-id="${c.id}" data-n="${p.n}">Cobrar</button>`:""}${(p.pagamentos||[]).length?`<button class="sm" data-act="estornar" data-id="${c.id}" data-n="${p.n}">Estornar</button>`:""}</div></td></tr>`}).join("")}</tbody></table></div></section>
+  <div class="row">${!c.cancelado&&statusC(c)!=="quitado"?`${btnInad(c)}<button data-act="cancelarC" data-id="${id}">Cancelar contrato</button>`:""}<button class="danger" data-act="delContrato" data-id="${id}">Excluir contrato</button><button data-act="verCliente" data-id="${c.clienteId}">Ver cliente</button></div>`);
+}
+
+/* ---------- formulários ---------- */
+function formCliente(c,pre){
+  c=c||{};pre=pre||c.status==="pre";
+  openModal(`<h3>${c.id?"Editar cliente":pre?"Novo pré-cadastro":"Novo cliente"}</h3><form id="fCli" class="form">
+    <label class="f full">Nome completo<input name="nome" required value="${esc(c.nome)}"></label>
+    <label class="f">CPF<input name="cpf" inputmode="numeric" value="${esc(c.cpf)}"></label>
+    <label class="f">Telefone (WhatsApp)<input name="telefone" inputmode="tel" placeholder="(11) 98888-7777" value="${esc(c.telefone)}"></label>
+    <label class="f">E-mail<input name="email" type="email" value="${esc(c.email)}"></label>
+    <label class="f">Indicado por<input name="indicacao" value="${esc(c.indicacao)}"></label>
+    <label class="f full">Endereço<input name="endereco" value="${esc(c.endereco)}"></label>
+    <label class="f">Renda mensal (R$)<input name="renda" type="number" step="0.01" min="0" value="${esc(c.renda)}"></label>
+    <label class="f">Valor pretendido (R$)<input name="valorPretendido" type="number" step="0.01" min="0" value="${esc(c.valorPretendido)}"></label>
+    <label class="f">Empresa onde trabalha<input name="empresa" value="${esc(c.empresa)}"></label>
+    <label class="f">Tempo de carteira<input name="tempoRegistro" value="${esc(c.tempoRegistro)}"></label>
+    <label class="f full">Contatos de referência<textarea name="referencias" style="min-height:56px" placeholder="Nome (parentesco) — telefone, um por linha">${esc(c.referencias)}</textarea></label>
+    <label class="f full">Observações<textarea name="obs">${esc(c.obs)}</textarea></label>
+    <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Salvar</button></div></form>`);
+  $("#fCli").onsubmit=async e=>{e.preventDefault();const d=formData(e.target);
+    const o={...c,...d,id:c.id||uid("cl"),status:c.status||(pre?"pre":"ativo"),criadoEm:c.criadoEm||new Date().toISOString()};
+    ["renda","valorPretendido"].forEach(k=>o[k]=o[k]?+o[k]:null);
+    try{await put("clientes",o);closeTop();toast(c.id?"Cliente atualizado":"Cliente cadastrado");if($(".drawer"))verCliente(o.id)}catch(_){}};
+}
+function formContrato(cliId){
+  const cls=S.clientes.filter(c=>c.status==="ativo"||!c.status).sort((a,b)=>a.nome.localeCompare(b.nome));
+  if(!cls.length){toast("Cadastre ou aprove um cliente antes de criar o contrato.");return}
+  const t=today();
+  openModal(`<h3>Novo contrato</h3><form id="fCon" class="form">
+    <label class="f full">Cliente<select name="clienteId" required>${cls.map(c=>`<option value="${c.id}" ${c.id===cliId?"selected":""}>${esc(c.nome)}</option>`).join("")}</select></label>
+    <label class="f">Valor emprestado (R$)<input name="valor" type="number" step="0.01" min="1" required value="1000"></label>
+    <label class="f">Modalidade<select name="modalidade">${Object.entries(MOD).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></label>
+    <label class="f"><span id="lblTaxa">Taxa de juros (% ao mês)</span><input name="taxa" type="number" step="0.01" min="0" required value="${cfg("taxa")}"></label>
+    <label class="f parc">Periodicidade<select name="periodicidade">${Object.entries(PER).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></label>
+    <label class="f parc">Número de parcelas<input name="nParcelas" type="number" min="1" max="360" required value="1"></label>
+    <label class="f"><span id="lblVenc">Vencimento</span><input name="primeiroVenc" type="date" required value="${addMonths(t,1)}"></label>
+    <label class="f">Data do contrato<input name="dataContrato" type="date" required value="${t}"></label>
+    <label class="f">Forma de liberação<select name="forma"><option>Pix</option><option>Dinheiro</option><option>Transferência</option></select></label>
+    <label class="f parc">Multa por atraso (%)<input name="multa" type="number" step="0.01" min="0" value="${cfg("multa")}"></label>
+    <label class="f parc">Mora (% ao dia)<input name="mora" type="number" step="0.001" min="0" value="${cfg("mora")}"></label>
+    <label class="f full">Observações<textarea name="obs" style="min-height:50px"></textarea></label>
+    <div class="calc full" id="sim"></div>
+    <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Criar contrato</button></div></form>`);
+  const f=$("#fCon"),sim=()=>{const d=formData(f),sd=d.modalidade==="saldo";
+    f.querySelectorAll(".parc").forEach(el=>el.hidden=sd);
+    $("#lblTaxa").textContent=sd?"Taxa de juros (% ao mês)":"Taxa de juros (% por período)";$("#lblVenc").textContent=sd?"Vencimento":"Primeiro vencimento";
+    if(!(+d.valor>0)||!d.primeiroVenc){$("#sim").innerHTML="";return}
+    if(sd){const td=(+d.taxa)/100/30,dias=Math.max(0,days(d.dataContrato||t,d.primeiroVenc)),j=r2(+d.valor*td*dias);
+      $("#sim").innerHTML=`<div><span>Juros por dia</span><span>${money(+d.valor*td)} · ${(td*100).toLocaleString("pt-BR",{maximumFractionDigits:3})}% ao dia</span></div><div><span>Juros até o vencimento (${dias} dias)</span><span>${money(j)}</span></div><div class="t"><span>Para quitar no vencimento</span><span>${money(+d.valor+j)}</span></div><div class="muted">Os juros correm por dia sobre o saldo. Cada pagamento quita primeiro os juros e o resto abate o saldo.</div>`;return}
+    const ps=gerarParcelas(d),tot=ps.reduce((a,p)=>a+p.valor,0);
+    $("#sim").innerHTML=`<div><span>Parcela${ps.length>1?"s":""}</span><b>${ps.length}× ${money(ps[0].valor)}${ps.length>1&&ps.at(-1).valor!==ps[0].valor?` (última ${money(ps.at(-1).valor)})`:""}</b></div><div><span>Vencimentos</span><span>${fdate(ps[0].venc)}${ps.length>1?" a "+fdate(ps.at(-1).venc):""}</span></div><div><span>Juros totais</span><span>${money(tot-d.valor)}</span></div><div class="t"><span>Total a receber</span><span>${money(tot)}</span></div>`};
+  f.oninput=sim;sim();
+  f.onsubmit=async e=>{e.preventDefault();const d=formData(f);
+    const c={id:uid("ct"),clienteId:d.clienteId,valor:+d.valor,taxa:+d.taxa,modalidade:d.modalidade,primeiroVenc:d.primeiroVenc,dataContrato:d.dataContrato,obs:d.obs,criadoEm:new Date().toISOString()};
+    if(d.modalidade==="saldo")Object.assign(c,{vencimento:d.primeiroVenc,movimentos:[],renegociacoes:[],parcelas:[]});
+    else{Object.assign(c,{periodicidade:d.periodicidade,nParcelas:+d.nParcelas,multa:+d.multa,mora:+d.mora});c.parcelas=gerarParcelas(c)}
+    try{await put("contratos",c);await put("transacoes",{id:uid("tx"),tipo:"saida",valor:c.valor,data:c.dataContrato,categoria:"Empréstimo concedido",descricao:"Empréstimo para "+cli(c.clienteId).nome,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,criadoEm:new Date().toISOString()});
+      closeTop();toast("Contrato criado");verContrato(c.id)}catch(_){}};
+}
+function formPagar(cid,n){
+  const c=S.contratos.find(x=>x.id===cid),p=c&&c.parcelas.find(x=>x.n===n);if(!p)return;
+  const e=encargos(p,c);
+  openModal(`<h3>Receber parcela ${p.n}/${c.parcelas.length} · ${esc(cli(c.clienteId).nome)}</h3>
+  <div class="calc"><div><span>Valor da parcela</span><span>${money(p.valor)}</span></div>${e.atraso?`<div><span>Multa (${c.multa}%)</span><span>${money(e.multa)}</span></div><div><span>Mora (${e.atraso} dias × ${c.mora}%)</span><span>${money(e.mora)}</span></div>`:""}${e.pago?`<div><span>Já pago</span><span>− ${money(e.pago)}</span></div>`:""}<div class="t"><span>Total devido hoje</span><span>${money(e.devido)}</span></div></div>
+  <form id="fPag" class="form"><label class="f">Valor recebido (R$)<input name="valor" type="number" step="0.01" min="0.01" required value="${e.devido.toFixed(2)}"></label>
+  <label class="f">Data do pagamento<input name="data" type="date" required value="${today()}"></label>
+  <label class="f full">Forma<select name="forma"><option>Pix</option><option>Dinheiro</option><option>Transferência</option><option>Cartão</option></select></label>
+  <p class="muted full" style="margin:0">Se o valor for menor que o devido, a parcela fica com pagamento parcial e o restante continua em aberto.</p>
+  <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Registrar recebimento</button></div></form>`);
+  $("#fPag").onsubmit=async ev=>{ev.preventDefault();const d=formData(ev.target),v=r2(+d.valor);
+    const ed=encargos(p,c,d.data),txId=uid("tx");
+    const parcelas=c.parcelas.map(x=>x.n!==n?x:{...x,pagamentos:[...(x.pagamentos||[]),{data:d.data,valor:v,txId,forma:d.forma}],quitada:v>=ed.devido-0.009});
+    try{await put("transacoes",{id:txId,tipo:"entrada",valor:v,data:d.data,categoria:"Recebimento de parcela",descricao:`Parcela ${n}/${c.parcelas.length} · ${cli(c.clienteId).nome}`,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,criadoEm:new Date().toISOString()});
+      await upd("contratos",c.id,{parcelas});closeTop();toast(v>=ed.devido-0.009?"Parcela quitada":"Pagamento parcial registrado");if($(".drawer"))verContrato(c.id)}catch(_){}};
+}
+function formPagarSaldo(cid){
+  const c=S.contratos.find(x=>x.id===cid);if(!c)return;
+  const x0=extrato(c),t=today();
+  openModal(`<h3>Registrar pagamento · ${esc(cli(c.clienteId).nome)}</h3><div class="calc" id="pgCalc"></div>
+  <form id="fPag" class="form"><label class="f">Data do pagamento<input name="data" type="date" required min="${x0.ultima}" value="${t<x0.ultima?x0.ultima:t}"></label>
+  <label class="f">Valor recebido (R$)<input name="valor" type="number" step="0.01" min="0.01" required></label>
+  <div class="row full"><button type="button" class="sm" data-fill="juros">Só os juros</button><button type="button" class="sm" data-fill="total">Quitar tudo</button></div>
+  <label class="f">Forma<select name="forma"><option>Pix</option><option>Dinheiro</option><option>Transferência</option><option>Cartão</option></select></label>
+  <label class="f">Novo vencimento (opcional)<input name="novoVenc" type="date"></label>
+  <div class="calc full" id="pgSplit"></div>
+  <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Registrar pagamento</button></div></form>`);
+  const f=$("#fPag"),F=n=>f.elements[n],calc=()=>{
+    const dt=F("data").value||t,x=extrato(c,dt),v=r2(+F("valor").value||0),pj=Math.min(v,x.jurosHoje),pc=r2(v-pj),dep=r2(x.saldoHoje-v);
+    $("#pgCalc").innerHTML=`<div><span>Saldo depois do último movimento (${fdate(x.ultima)})</span><span>${money(x.saldoBase)}</span></div><div><span>Juros de ${x.diasHoje} dias (${(+c.taxa).toLocaleString("pt-BR")}% ao mês ÷ 30)</span><span>${money(x.jurosHoje)}</span></div><div class="t"><span>Para quitar em ${fdate(dt)}</span><span>${money(x.saldoHoje)}</span></div>`;
+    $("#pgSplit").innerHTML=v>0?`<div><span>Vai para juros</span><span>${money(pj)}</span></div><div><span>Vai para capital</span><span>${money(pc)}</span></div><div class="t"><span>${dep<=0.009?"Contrato quitado":"Saldo depois do pagamento"}</span><span>${money(Math.max(0,dep))}</span></div>`:"";
+    return {x,v,pj,pc,dep}};
+  f.oninput=calc;calc();
+  f.querySelectorAll("[data-fill]").forEach(b=>b.onclick=()=>{const x=extrato(c,F("data").value||t),j=b.dataset.fill==="juros";
+    F("valor").value=(j?x.jurosHoje:x.saldoHoje).toFixed(2);if(j&&!F("novoVenc").value)F("novoVenc").value=addMonths(c.vencimento,1);calc()});
+  f.onsubmit=async ev=>{ev.preventDefault();const {x,v,pj,pc,dep}=calc(),d=formData(f);
+    if(d.data<x.ultima){toast("A data não pode ser anterior ao último movimento ("+fdate(x.ultima)+").");return}
+    if(v>x.saldoHoje+0.009){toast("O valor passa do total para quitar ("+money(x.saldoHoje)+").");return}
+    const now=new Date().toISOString(),nome=cli(c.clienteId).nome,base={tipo:"entrada",data:d.data,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,criadoEm:now};
+    const m={id:uid("mv"),data:d.data,valor:v,juros:pj,capital:pc,forma:d.forma,criadoEm:now},mud={};
+    if(d.novoVenc&&d.novoVenc!==c.vencimento&&dep>0.009){m.vencAnterior=c.vencimento;mud.vencimento=d.novoVenc;mud.renegociacoes=[...(c.renegociacoes||[]),{data:d.data,de:c.vencimento,para:d.novoVenc,motivo:"Pagamento de "+money(v),movId:m.id}]}
+    try{
+      if(pj>0){m.txJ=uid("tx");await put("transacoes",{...base,id:m.txJ,valor:pj,categoria:"Pagamento de juros",descricao:"Juros · "+nome})}
+      if(pc>0){m.txC=uid("tx");await put("transacoes",{...base,id:m.txC,valor:pc,categoria:"Pagamento de capital",descricao:"Capital · "+nome})}
+      await upd("contratos",c.id,{...mud,movimentos:[...(c.movimentos||[]),m]});
+      closeTop();toast(dep<=0.009?"Contrato quitado":"Pagamento registrado");if($(".drawer"))setTimeout(()=>verContrato(c.id),300)}catch(_){}};
+}
+function estornarSaldo(cid){
+  const c=S.contratos.find(x=>x.id===cid),last=c&&extrato(c).linhas.at(-1).mov;if(!last)return;
+  confirmar(`Estornar o pagamento de ${money(last.valor)} feito em ${fdate(last.data)}?`,async()=>{
+    const r=(c.renegociacoes||[]).find(x=>x.movId===last.id),data={movimentos:(c.movimentos||[]).filter(m=>m.id!==last.id)};
+    if(r){data.renegociacoes=c.renegociacoes.filter(x=>x!==r);if(c.vencimento===r.para)data.vencimento=r.de}
+    try{await upd("contratos",cid,data);for(const t of [last.txJ,last.txC])if(t)await del("transacoes",t);toast("Pagamento estornado");setTimeout(()=>verContrato(cid),300)}catch(_){}
+  },"Estornar");
+}
+function formMarcarInad(cid){
+  const c=S.contratos.find(x=>x.id===cid);if(!c)return;
+  openModal(`<h3>Marcar como inadimplente</h3><div class="muted">O contrato entra na tela de Inadimplentes mesmo antes do corte de dias. O motivo aparece para o cobrador.</div>
+  <form id="fInad" class="form"><label class="f full">Motivo<textarea name="motivo" required placeholder="Ex.: não atende o telefone desde o vencimento" style="min-height:60px"></textarea></label>
+  <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Marcar</button></div></form>`);
+  $("#fInad").onsubmit=async e=>{e.preventDefault();const m=formData(e.target).motivo.trim();if(!m)return;
+    try{await upd("contratos",cid,{inad:{motivo:m,em:today()}});closeTop();toast("Contrato marcado como inadimplente");setTimeout(()=>verContrato(cid),300)}catch(_){}};
+}
+function formRenegociar(cid){
+  const c=S.contratos.find(x=>x.id===cid);if(!c)return;
+  openModal(`<h3>Renegociar vencimento</h3><div class="muted">Vencimento atual: ${fdate(c.vencimento)}. Os juros continuam correndo por dia até o pagamento.</div>
+  <form id="fRen" class="form"><label class="f">Novo vencimento<input name="para" type="date" required value="${addMonths(c.vencimento<today()?today():c.vencimento,1)}"></label>
+  <label class="f">Motivo<input name="motivo" placeholder="Ex.: pediu mais prazo"></label>
+  <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Salvar</button></div></form>`);
+  $("#fRen").onsubmit=async e=>{e.preventDefault();const d=formData(e.target);if(d.para===c.vencimento){closeTop();return}
+    try{await upd("contratos",cid,{vencimento:d.para,renegociacoes:[...(c.renegociacoes||[]),{data:today(),de:c.vencimento,para:d.para,motivo:d.motivo||""}]});closeTop();toast("Vencimento alterado");setTimeout(()=>verContrato(cid),300)}catch(_){}};
+}
+function estornar(cid,n){
+  const c=S.contratos.find(x=>x.id===cid),p=c&&c.parcelas.find(x=>x.n===n);if(!p||!(p.pagamentos||[]).length)return;
+  const last=p.pagamentos.at(-1);
+  confirmar(`Estornar o pagamento de ${money(last.valor)} feito em ${fdate(last.data)}?`,async()=>{
+    const parcelas=c.parcelas.map(x=>x.n!==n?x:{...x,pagamentos:x.pagamentos.slice(0,-1),quitada:false});
+    try{await upd("contratos",cid,{parcelas});if(last.txId)await del("transacoes",last.txId);toast("Pagamento estornado");verContrato(cid)}catch(_){}
+  },"Estornar");
+}
+function mensagem(cid,n){
+  const c=S.contratos.find(x=>x.id===cid);if(!c)return;
+  let k;
+  if(isSaldo(c))k={parc:"única",valor:extrato(c).saldoHoje,venc:c.vencimento,atraso:Math.max(0,days(c.vencimento,today()))};
+  else{const p=c.parcelas.find(x=>x.n===n);if(!p)return;const e=encargos(p,c);k={parc:`${p.n}/${c.parcelas.length}`,valor:e.devido,venc:p.venc,atraso:e.atraso}}
+  const cl=cli(c.clienteId);
+  const txt=cfg("msg").replace(/\{nome\}/g,(cl.nome||"").split(" ")[0]).replace(/\{parcela\}/g,k.parc).replace(/\{valor\}/g,money(k.valor)).replace(/\{vencimento\}/g,fdate(k.venc)).replace(/\{atraso\}/g,k.atraso+" dias");
+  const tel=String(cl.telefone||"").replace(/\D/g,""),full=tel.length>=10&&tel.length<=11?"55"+tel:tel;
+  openModal(`<h3>Mensagem de cobrança</h3><div class="muted">${esc(cl.nome)} · ${esc(cl.telefone||"sem telefone")}</div><div class="msgbox" id="msgTxt">${esc(txt)}</div>
+  <div class="row end"><button data-act="close">Fechar</button><button id="cpMsg">Copiar texto</button>${full?`<a class="btn pri" target="_blank" rel="noopener" href="https://wa.me/${full}?text=${encodeURIComponent(txt)}">Abrir no WhatsApp</a>`:""}</div>`);
+  $("#cpMsg").onclick=()=>{navigator.clipboard?.writeText(txt).then(()=>toast("Mensagem copiada"),()=>{const r=document.createRange();r.selectNodeContents($("#msgTxt"));const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Texto selecionado: use Ctrl+C")})};
+}
+function formLanc(){
+  openModal(`<h3>Novo lançamento no caixa</h3><form id="fLan" class="form">
+  <label class="f">Tipo<select name="tipo"><option value="saida">Saída (despesa, retirada)</option><option value="entrada">Entrada (aporte, outra receita)</option></select></label>
+  <label class="f">Valor (R$)<input name="valor" type="number" step="0.01" min="0.01" required></label>
+  <label class="f full">Descrição<input name="descricao" required placeholder="Ex.: combustível para cobranças"></label>
+  <label class="f">Categoria<input name="categoria" list="cats" placeholder="Despesa operacional"><datalist id="cats"><option>Despesa operacional</option><option>Aporte de capital</option><option>Retirada do sócio</option><option>Comissão</option></datalist></label>
+  <label class="f">Data<input name="data" type="date" required value="${today()}"></label>
+  <label class="f full">Forma<select name="forma"><option>Pix</option><option>Dinheiro</option><option>Transferência</option></select></label>
+  <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Lançar</button></div></form>`);
+  $("#fLan").onsubmit=async e=>{e.preventDefault();const d=formData(e.target);try{await put("transacoes",{...d,id:uid("tx"),valor:+d.valor,criadoEm:new Date().toISOString()});closeTop();toast("Lançamento registrado")}catch(_){}};
+}
+
+/* ---------- eventos ---------- */
+document.addEventListener("click",async e=>{
+  const sc=e.target.closest(".scrim");if(sc&&e.target===sc){closeTop();return}
+  const a=e.target.closest("[data-act]");if(!a)return;
+  const act=a.dataset.act,id=a.dataset.id,n=+a.dataset.n;
+  if(a.tagName==="TR"&&e.target.closest("button"))return;
+  e.stopPropagation();
+  switch(act){
+    case"close":closeTop();break;
+    case"tab":ui[a.dataset.k]=a.dataset.v;render();break;
+    case"go":if(a.dataset.tab)ui.cobTab=a.dataset.tab;location.hash=a.dataset.go;break;
+    case"novoCliente":formCliente(null,!!a.dataset.pre);break;
+    case"editCliente":formCliente(S.clientes.find(x=>x.id===id));break;
+    case"verCliente":verCliente(id);break;
+    case"verContrato":verContrato(id);break;
+    case"novoContrato":formContrato(a.dataset.cli);break;
+    case"pagar":isSaldo(S.contratos.find(x=>x.id===id))?formPagarSaldo(id):formPagar(id,n);break;
+    case"cobrar":mensagem(id,n);break;
+    case"estornar":estornar(id,n);break;
+    case"estornarSaldo":estornarSaldo(id);break;
+    case"renegociar":formRenegociar(id);break;
+    case"marcarInad":formMarcarInad(id);break;
+    case"desmarcarInad":confirmar("Tirar este contrato da inadimplência? Ele só volta para a lista se passar do corte de dias.",async()=>{try{await upd("contratos",id,{inad:null});toast("Marcação removida");setTimeout(()=>verContrato(id),300)}catch(_){}},"Tirar");break;
+    case"novoLanc":formLanc();break;
+    case"aprovar":try{await upd("clientes",id,{status:"ativo"});toast("Cadastro aprovado");if($(".drawer"))verCliente(id)}catch(_){}break;
+    case"recusar":confirmar("Recusar e excluir este pré-cadastro?",async()=>{try{await del("clientes",id);toast("Pré-cadastro excluído")}catch(_){}},"Recusar");break;
+    case"bloquear":{const c=S.clientes.find(x=>x.id===id);try{await upd("clientes",id,{status:c.status==="bloqueado"?"ativo":"bloqueado"});setTimeout(()=>verCliente(id),300)}catch(_){}break}
+    case"delCliente":if(S.contratos.some(k=>k.clienteId===id)){toast("Este cliente tem contratos. Exclua os contratos antes.");break}confirmar("Excluir este cliente?",async()=>{try{await del("clientes",id);closeTop();toast("Cliente excluído")}catch(_){}},"Excluir");break;
+    case"cancelarC":confirmar("Cancelar este contrato? As parcelas em aberto deixam de ser cobradas.",async()=>{try{await upd("contratos",id,{cancelado:true});setTimeout(()=>verContrato(id),300)}catch(_){}},"Cancelar contrato");break;
+    case"delContrato":confirmar("Excluir o contrato e todos os lançamentos de caixa ligados a ele?",async()=>{try{for(const t of S.transacoes.filter(x=>x.contratoId===id))await del("transacoes",t.id);await del("contratos",id);closeTop();toast("Contrato excluído")}catch(_){}},"Excluir");break;
+    case"delLanc":confirmar("Excluir este lançamento?",async()=>{try{await del("transacoes",id);toast("Lançamento excluído")}catch(_){}},"Excluir");break;
+    case"limparEx":confirmar("Remover todos os dados de exemplo?",async()=>{try{for(const col of ["transacoes","contratos","clientes"])for(const x of S[col].filter(x=>x.exemplo))await del(col,x.id);toast("Dados de exemplo removidos")}catch(_){}},"Remover");break;
+  }
+});
+document.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches(".kpi[data-act]")){e.preventDefault();e.target.click()}});
+document.addEventListener("input",e=>{
+  const t=e.target;
+  if(t.id==="cliQ"||t.id==="conQ"){ui[t.id]=t.value;focusId=t.id;focusPos=t.selectionStart;render();}
+  if(t.id==="cxMes"&&t.value){ui.cxMes=t.value;render()}
+});
+document.addEventListener("submit",async e=>{
+  if(e.target.id!=="fCfg")return;e.preventDefault();const d=formData(e.target);
+  try{if(!canWrite)throw 0;await db.doc("config/geral").set({nome:d.nome,taxa:+d.taxa,saldoInicial:+d.saldoInicial||0,multa:+d.multa,mora:+d.mora,corteDias:Math.max(1,parseInt(d.corteDias)||1),msg:d.msg,empresaPublica:(d.empresaPublica||"").trim(),avisoPrivacidade:(d.avisoPrivacidade||"").trim()});toast("Configurações salvas")}catch(_){toast("Não foi possível salvar.")}
+});
+$("#menuBtn").onclick=()=>$("#side").classList.toggle("open");
+function route(){const h=location.hash.slice(1);view=TITLES[h]?h:"dashboard";focusId=null;$("#side").classList.remove("open");$("#layer").innerHTML="";render();window.scrollTo(0,0)}
+window.addEventListener("hashchange",route);
+route();boot();
+})();
+</script>

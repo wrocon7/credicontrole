@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pré-cadastro</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Figtree:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/assets/base.css">
+</head>
+<body>
+<main class="page">
+  <h1 id="titulo">Pré-cadastro</h1>
+  <p class="muted" style="margin-top:0">Preencha seus dados para a análise do pedido. Entraremos em contato pelo telefone informado.</p>
+
+  <div id="feito" class="ok" hidden>Recebemos o seu pré-cadastro. Em breve entraremos em contato pelo telefone informado.</div>
+
+  <form id="f" autocomplete="on">
+    <section class="card"><h2>Seus dados</h2><div class="form">
+      <label class="f">Nome completo<input name="nome" required autocomplete="name"></label>
+      <label class="f s3">CPF<input name="cpf" required inputmode="numeric" placeholder="000.000.000-00"></label>
+      <label class="f s3">Telefone (WhatsApp)<input name="telefone" required inputmode="tel" autocomplete="tel" placeholder="(27) 99999-9999"></label>
+      <label class="f">E-mail<input name="email" type="email" autocomplete="email"></label>
+    </div></section>
+
+    <section class="card"><h2>Trabalho e valor</h2><div class="form">
+      <label class="f s4">Empresa onde trabalha<input name="empresa"></label>
+      <label class="f s2">Tempo de carteira<input name="tempoRegistro" placeholder="Ex.: 8 meses"></label>
+      <label class="f s3">Renda mensal (R$)<input name="renda" inputmode="decimal"></label>
+      <label class="f s3">Valor que precisa (R$)<input name="valorPretendido" inputmode="decimal"></label>
+    </div></section>
+
+    <section class="card"><h2>Endereço</h2><div class="form">
+      <label class="f s2">CEP<input name="cep" inputmode="numeric" autocomplete="postal-code" placeholder="00000-000"></label>
+      <label class="f s4">Rua<input name="logradouro" autocomplete="address-line1"></label>
+      <label class="f s2">Número<input name="numero"></label>
+      <label class="f s4">Bairro<input name="bairro"></label>
+      <label class="f s4">Cidade<input name="cidade" autocomplete="address-level2"></label>
+      <label class="f s2">UF<input name="uf" maxlength="2" autocomplete="address-level1"></label>
+    </div></section>
+
+    <section class="card"><h2>Contatos de referência</h2><p class="muted" style="margin-top:-6px">Duas pessoas próximas que possam confirmar seus dados.</p><div class="form">
+      <label class="f s3">Nome<input name="ref1Nome"></label>
+      <label class="f s3">Parentesco<input name="ref1Parentesco" placeholder="Ex.: mãe"></label>
+      <label class="f">Telefone<input name="ref1Telefone" inputmode="tel"></label>
+      <label class="f s3">Nome<input name="ref2Nome"></label>
+      <label class="f s3">Parentesco<input name="ref2Parentesco"></label>
+      <label class="f">Telefone<input name="ref2Telefone" inputmode="tel"></label>
+    </div></section>
+
+    <section class="card"><div class="form">
+      <label class="oculto" aria-hidden="true">Site<input name="site" tabindex="-1" autocomplete="off"></label>
+      <label class="check"><input type="checkbox" name="aceite" required><span id="aviso"></span></label>
+      <div id="erro" class="erro" hidden></div>
+      <button class="pri" type="submit">Enviar pré-cadastro</button>
+    </div></section>
+  </form>
+</main>
+<script>
+const f = document.getElementById("f"), erro = document.getElementById("erro");
+const franquia = new URLSearchParams(location.search).get("f") || "";
+fetch("/api/publico/info").then(r => r.json()).then(i => {
+  if (i.nome) document.getElementById("titulo").textContent = document.title = "Pré-cadastro · " + i.nome;
+  document.getElementById("aviso").textContent = `${i.nome ? `Autorizo ${i.nome} a usar` : "Autorizo o uso de"} os meus dados para analisar o pedido de crédito. ${i.aviso}`;
+}).catch(() => {});
+
+// Endereço pelo CEP (ViaCEP)
+f.cep.addEventListener("blur", async () => {
+  const cep = f.cep.value.replace(/\D/g, "");
+  if (cep.length !== 8) return;
+  try {
+    const j = await (await fetch(`https://viacep.com.br/ws/${cep}/json/`)).json();
+    if (j.erro) return;
+    for (const [campo, v] of [["logradouro", j.logradouro], ["bairro", j.bairro], ["cidade", j.localidade], ["uf", j.uf]]) if (v && !f[campo].value) f[campo].value = v;
+    f.numero.focus();
+  } catch (_) {}
+});
+
+f.onsubmit = async e => {
+  e.preventDefault();
+  const b = f.querySelector("button[type=submit]"); b.disabled = true; erro.hidden = true;
+  const dados = Object.fromEntries(new FormData(f));
+  dados.aceite = f.aceite.checked; dados.franquia = franquia;
+  try {
+    const r = await fetch("/api/publico/precadastro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || "Não foi possível enviar.");
+    f.hidden = true; document.getElementById("feito").hidden = false; window.scrollTo(0, 0);
+  } catch (x) { erro.textContent = x.message; erro.hidden = false; b.disabled = false; }
+};
+</script>
+</body>
+</html>
