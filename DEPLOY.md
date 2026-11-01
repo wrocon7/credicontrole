@@ -38,8 +38,8 @@ existir nenhum usuário**.
 
    | Variável | Valor |
    |---|---|
-   | `DATABASE_URL` | connection string do Postgres |
-   | `PGSSL` | `1` (Render, Neon e Supabase exigem SSL) |
+   | `DATABASE_URL` | connection string do Postgres. No Neon, troque `sslmode=require` por `sslmode=verify-full` |
+   | `PGSSL` | deixe vazio se a string já tem `sslmode=verify-full` (Neon); `1` só se o banco exige SSL e a string não diz nada |
    | `SESSION_SECRET` | texto longo e aleatório (trocar derruba todas as sessões) |
    | `ADMIN_EMAIL` / `ADMIN_SENHA` | primeiro administrador (senha com 8+ caracteres) |
 
