@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Lembretes · CrediControle</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Figtree:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/assets/base.css">
+<style>
+.page{max-width:1000px}
+.estado{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.estado .card{margin:0}
+.estado b{display:block;font-family:var(--f-display);font-size:16px;margin-top:4px}
+.sim{color:var(--accent)}.nao{color:var(--bad)}
+.linha{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.linha label.f{flex:1;min-width:180px}
+@media (max-width:760px){
+  .estado{grid-template-columns:minmax(0,1fr)}
+  .tbl thead{display:none}
+  .tbl tr,.tbl td{display:block}
+  .tbl tr{padding:10px 0;border-bottom:1px solid var(--line)}
+  .tbl td{border:0;padding:2px 0}
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <p><a href="/" style="color:var(--accent)">← Voltar ao sistema</a></p>
+  <h1>Lembretes no WhatsApp</h1>
+  <p class="muted" style="margin-top:0">Todo dia o sistema avisa os clientes dos vencimentos, pela mensagem modelo aprovada pela Meta. Cada aviso sai uma vez só.</p>
+  <div id="erro" class="erro" hidden></div>
+  <div class="estado">
+    <div class="card"><span class="muted">WhatsApp</span><b id="eWhats">…</b><span class="muted" id="eModelo"></span></div>
+    <div class="card"><span class="muted">Envio automático</span><b id="eAtivo">…</b><span class="muted" id="eDias"></span></div>
+    <div class="card"><span class="muted">Agendamento diário</span><b id="eCron">…</b><span class="muted">tarefa que chama o servidor todo dia</span></div>
+  </div>
+
+  <section class="card"><h2>Configuração</h2>
+    <form id="f" class="form">
+      <label class="check"><input type="checkbox" name="ativo"> <span>Enviar os lembretes automaticamente todos os dias</span></label>
+      <div class="linha">
+        <label class="f">Quando avisar (dias antes do vencimento, separados por vírgula)<input name="dias" placeholder="1, 0" inputmode="numeric"></label>
+        <button class="pri" type="submit">Salvar</button>
+      </div>
+      <p class="muted" style="margin:0">1 = um dia antes, 0 = no dia, −3 = três dias depois do vencimento (cobrança de atraso). Clientes marcados como "não quer lembretes" nunca recebem.</p>
+    </form>
+  </section>
+
+  <section class="card"><div class="linha" style="justify-content:space-between;margin-bottom:10px"><h2 style="margin:0">Hoje, <span id="hoje"></span></h2><button id="enviar">Enviar os de hoje agora</button></div>
+    <div class="tbl"><table><thead><tr><th>Cliente</th><th>Celular</th><th>Vencimento</th><th>Valor</th><th>Situação</th></tr></thead><tbody id="previa"></tbody></table></div>
+  </section>
+
+  <section class="card"><h2>Últimos envios</h2>
+    <div class="tbl"><table><thead><tr><th>Quando</th><th>Cliente</th><th>Vencimento</th><th>Valor</th><th>Situação</th></tr></thead><tbody id="hist"></tbody></table></div>
+  </section>
+</main>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const BRL = v => v == null ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const fd = s => s ? String(s).split("-").reverse().join("/") : "—";
+const ST = { enviado: ["Enviado", "ok"], "vai enviar": ["Vai enviar", ""], "vai pular": ["Não vai enviar", ""], pulado: ["Não enviado", ""], erro: ["Erro", "bad"], enviando: ["Enviando", ""] };
+const pill = (s, e) => { const [t, k] = ST[s] || [s, ""]; return `<span class="pill ${k === "ok" ? "ok" : ""}" ${k === "bad" ? 'style="background:var(--bad-soft);color:var(--bad)"' : ""}>${t}</span>${e ? `<div class="muted" style="font-size:12px">${esc(e)}</div>` : ""}`; };
+const mostra = m => { const el = document.getElementById("erro"); el.textContent = m; el.hidden = !m; };
+async function api(m, url, corpo) {
+  const r = await fetch(url, { method: m, headers: corpo ? { "Content-Type": "application/json" } : {}, body: corpo ? JSON.stringify(corpo) : undefined });
+  if (r.status === 401) location.href = "/login";
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.erro || "Erro " + r.status);
+  return j;
+}
+const f = document.getElementById("f");
+async function carrega() {
+  const j = await api("GET", "/api/lembretes");
+  const sn = (ok, a, b) => `<span class="${ok ? "sim" : "nao"}">${ok ? a : b}</span>`;
+  document.getElementById("eWhats").innerHTML = sn(j.whatsapp.configurado, "Configurado", "Não configurado");
+  document.getElementById("eModelo").textContent = j.whatsapp.modelo ? `modelo "${j.whatsapp.modelo}" (${j.whatsapp.idioma})` : "faltam as variáveis WHATSAPP_* no servidor";
+  document.getElementById("eAtivo").innerHTML = sn(j.conf.ativo, "Ligado", "Desligado");
+  document.getElementById("eDias").textContent = "avisa com " + j.conf.dias.map(d => d > 0 ? `${d} dia${d > 1 ? "s" : ""} antes` : d === 0 ? "no dia" : `${-d} dia${d < -1 ? "s" : ""} de atraso`).join(", ");
+  document.getElementById("eCron").innerHTML = sn(j.agendamento, "Configurado", "Falta o CRON_TOKEN");
+  document.getElementById("hoje").textContent = fd(j.hoje);
+  f.ativo.checked = !!j.conf.ativo; f.dias.value = j.conf.dias.join(", ");
+  document.getElementById("previa").innerHTML = j.previa.map(i => `<tr><td><b>${esc(i.nome)}</b></td><td>${esc(i.telefone || "—")}</td><td>${fd(i.venc)}</td><td>${BRL(i.valor)}</td><td>${pill(i.status, i.erro)}</td></tr>`).join("")
+    || '<tr><td colspan="5" class="muted">Nenhum vencimento para avisar hoje.</td></tr>';
+  document.getElementById("hist").innerHTML = j.historico.map(h => `<tr><td style="white-space:nowrap">${new Date(h.quando).toLocaleString("pt-BR")}</td><td>${esc(h.nome)}</td><td>${fd(h.vencimento)}</td><td>${BRL(h.valor)}</td><td>${pill(h.status, h.erro)}</td></tr>`).join("")
+    || '<tr><td colspan="5" class="muted">Nenhum lembrete enviado ainda.</td></tr>';
+}
+f.onsubmit = async e => {
+  e.preventDefault();
+  try {
+    mostra("");
+    const dias = [...new Set(f.dias.value.split(/[,;\s]+/).filter(Boolean).map(Number))];
+    if (!dias.length || dias.some(d => !Number.isInteger(d) || d < -60 || d > 30)) throw new Error("Use números inteiros entre −60 e 30, separados por vírgula.");
+    await api("PUT", "/api/doc/config/lembretes", { ativo: f.ativo.checked, dias });
+    await carrega();
+  } catch (x) { mostra(x.message); }
+};
+document.getElementById("enviar").onclick = async e => {
+  const b = e.target; b.disabled = true;
+  try {
+    mostra("");
+    const r = await api("POST", "/api/lembretes/enviar");
+    if (r.erro) throw new Error(r.erro);
+    alert(`Enviados: ${r.enviados}. Não enviados (sem celular ou recusou): ${r.pulados}. Com erro: ${r.falhas}. Já tinham sido enviados: ${r.jaEnviados}.`);
+    await carrega();
+  } catch (x) { mostra(x.message); } finally { b.disabled = false; }
+};
+carrega().catch(x => mostra(x.message));
+</script>
+</body>
+</html>

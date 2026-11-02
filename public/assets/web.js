@@ -91,7 +91,7 @@
     box.style.cssText = "margin-top:18px;padding:14px 10px 4px;border-top:1px solid rgba(255,255,255,.1);display:grid;gap:8px;font-size:13px";
     box.innerHTML = `<div style="color:var(--side-muted)">Conectado como<br><b style="color:#fff">${esc(eu.nome)}</b> · ${eu.papel === "admin" ? "administrador" : "operador"}</div>
       <a href="#" id="ccLink" style="${a}">Copiar link de pré-cadastro</a>
-      ${eu.papel === "admin" ? `<a href="/usuarios" style="${a}">Usuários</a><a href="/auditoria" style="${a}">Auditoria</a><a href="/api/backup" download style="${a}">Baixar cópia de segurança</a>` : ""}
+      ${eu.papel === "admin" ? `<a href="/usuarios" style="${a}">Usuários</a><a href="/lembretes" style="${a}">Lembretes no WhatsApp</a><a href="/auditoria" style="${a}">Auditoria</a><a href="/api/backup" download style="${a}">Baixar cópia de segurança</a>` : ""}
       <a href="/trocar-senha" style="${a}">Minha senha</a>
       <a href="#" id="ccSair" style="${a}">Sair</a>`;
     side.appendChild(box);

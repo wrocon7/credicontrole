@@ -6,6 +6,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as db from "./db.js";
+import * as lembretes from "./lembretes.js";
+import { hojeBR } from "./calculo.js";
 import { hashSenha, confereSenha, criarToken, lerToken, lerCookies, limitador, cpfValido, DURACAO_SESSAO } from "./auth.js";
 
 const raiz = path.dirname(fileURLToPath(import.meta.url));
@@ -17,7 +19,7 @@ const ler = nome => readFileSync(path.join(raiz, "public", nome), "utf8");
 const PAGINAS = {
   index: `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"></head><body><script src="/assets/web.js"></script>\n${readFileSync(path.join(raiz, "app", "credicontrole.html"), "utf8")}\n</body></html>`,
   login: ler("login.html"), cadastro: ler("cadastro.html"), usuarios: ler("usuarios.html"),
-  auditoria: ler("auditoria.html"), "trocar-senha": ler("trocar-senha.html"),
+  auditoria: ler("auditoria.html"), "trocar-senha": ler("trocar-senha.html"), lembretes: ler("lembretes.html"),
 };
 
 const app = express();
@@ -76,10 +78,12 @@ app.get("/", paginaLogada("index"));
 app.get("/trocar-senha", paginaLogada("trocar-senha"));
 app.get("/usuarios", paginaLogada("usuarios", true));
 app.get("/auditoria", paginaLogada("auditoria", true));
+app.get("/lembretes", paginaLogada("lembretes", true));
 app.get("/login", (req, res) => pagina(res, "login"));
 app.get("/cadastro", (req, res) => pagina(res, "cadastro"));
 app.use("/assets", express.static(path.join(raiz, "public", "assets"), { maxAge: PRODUCAO ? "1h" : 0 }));
 app.get("/saude", (req, res) => res.json({ ok: true }));
+app.get("/favicon.ico", (req, res) => res.status(204).end());
 
 /* ---------- login e senha ---------- */
 const tentativas = limitador(10, 15 * 60e3);
@@ -207,6 +211,31 @@ app.get("/api/backup", exige("admin"), assincrono(async (req, res) => {
   res.json({ geradoEm: new Date().toISOString(), documentos: docs.length, colecoes: porColecao });
 }));
 
+/* ---------- lembretes de vencimento pelo WhatsApp ---------- */
+app.get("/api/lembretes", exige("admin"), assincrono(async (req, res) => {
+  const hoje = hojeBR(), { conf, itens } = await lembretes.pendentes(hoje), sit = await db.lembretes.situacao(itens.map(i => i.chave));
+  res.json({
+    hoje, conf, whatsapp: lembretes.whatsapp(), agendamento: !!process.env.CRON_TOKEN,
+    previa: itens.map(i => ({ ...i, status: sit[i.chave]?.status || (i.motivo ? "vai pular" : "vai enviar"), erro: sit[i.chave]?.erro || i.motivo })),
+    historico: await db.lembretes.recentes(),
+  });
+}));
+app.post("/api/lembretes/enviar", exige("admin"), assincrono(async (req, res) => {
+  const r = await lembretes.executar({ forcar: true });
+  audita(req, { acao: "lembretes_manual", depois: r });
+  res.json(r);
+}));
+// Chamada pela tarefa agendada (GitHub Actions ou outro cron), com o CRON_TOKEN no cabeçalho Authorization.
+app.post("/api/tarefas/lembretes", assincrono(async (req, res) => {
+  const esperado = process.env.CRON_TOKEN, veio = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  if (!esperado) return res.status(503).json({ erro: "CRON_TOKEN não configurado no servidor." });
+  const a = crypto.createHash("sha256").update(veio).digest(), b = crypto.createHash("sha256").update(esperado).digest();
+  if (!crypto.timingSafeEqual(a, b)) return res.status(401).json({ erro: "Token inválido." });
+  const r = await lembretes.executar();
+  db.auditar({ acao: "lembretes_automaticos", depois: r, ip: req.ip }).catch(() => {});
+  res.json(r);
+}));
+
 /* ---------- pré-cadastro público ---------- */
 app.get("/api/publico/info", assincrono(async (req, res) => {
   const c = (await db.ler("config", "geral")) || {};
@@ -234,7 +263,7 @@ app.post("/api/publico/precadastro", assincrono(async (req, res) => {
     nome, cpf: cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4"), telefone, email: t(b.email),
     endereco, cep: t(b.cep, 9), logradouro: t(b.logradouro), numero: t(b.numero, 20), bairro: t(b.bairro, 80), cidade, uf,
     empresa: t(b.empresa), tempoRegistro: t(b.tempoRegistro, 40), renda: num(b.renda), valorPretendido: num(b.valorPretendido),
-    referencias, franquia: t(b.franquia, 30), origem: "link",
+    referencias, franquia: t(b.franquia, 30), origem: "link", semLembrete: b.aceitaWhatsapp !== true,
     obs: ja ? `Atenção: este CPF já está cadastrado (${ja.nome}).` : "",
     status: "pre", criadoEm: agora, aceitePrivacidadeEm: agora,
   });

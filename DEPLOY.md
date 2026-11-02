@@ -84,6 +84,41 @@ a pasta com o app parado.
 - **Ao atualizar para esta versão** todos precisam entrar de novo, e os usuários que já existiam são obrigados a
   trocar a senha.
 
+## Lembretes de vencimento no WhatsApp
+
+Todo dia, às 9h, o sistema avisa os clientes dos vencimentos (por padrão, um dia antes e no dia) pela **API oficial
+do WhatsApp (Meta)**. Cada aviso sai uma vez só, e quem não quer receber fica de fora. A tela é **menu → Lembretes
+no WhatsApp** (só administrador): mostra o que sai hoje e o histórico, e tem um botão para enviar na hora.
+
+1. **Número na API oficial.** No Meta Business (o mesmo processo do CLAUDIM), ligue um número à WhatsApp Cloud
+   API e anote o **Phone Number ID**. Gere um **token permanente** (usuário do sistema com permissão
+   `whatsapp_business_messaging`).
+2. **Mensagem modelo.** Para mandar mensagem sem o cliente ter escrito antes, a Meta exige um modelo aprovado. No
+   WhatsApp Manager → *Modelos de mensagem* → *Criar*:
+   - Categoria **Utilidade**, idioma **Português (BR)**, nome `lembrete_vencimento`.
+   - Corpo com **3 variáveis, nesta ordem**: primeiro nome, valor e data. Exemplo:
+     > Olá {{1}}, passando para lembrar que o seu pagamento de {{2}} vence em {{3}}. Se já pagou, desconsidere.
+   - O valor é o da parcela. Nos contratos de saldo devedor, é o total para quitar na data do vencimento.
+3. **Variáveis na Render** (Environment):
+
+   | Variável | Valor |
+   |---|---|
+   | `WHATSAPP_PHONE_NUMBER_ID` | o Phone Number ID |
+   | `WHATSAPP_TOKEN` | o token permanente |
+   | `WHATSAPP_TEMPLATE` | `lembrete_vencimento` (o nome do modelo) |
+   | `WHATSAPP_TEMPLATE_LANG` | `pt_BR` (opcional; é o padrão) |
+   | `CRON_TOKEN` | texto longo e aleatório (o mesmo do passo 4) |
+
+4. **Agendamento diário** (GitHub Actions, já está no repositório em `.github/workflows/lembretes.yml`). No GitHub
+   → *Settings → Secrets and variables → Actions*, crie os secrets `APP_URL` (ex.: `https://credicontrole.onrender.com`)
+   e `CRON_TOKEN` (o mesmo valor da Render). Para testar, vá em *Actions → Lembretes de vencimento → Run workflow*.
+5. **Ligar** em menu → Lembretes no WhatsApp: marque "Enviar os lembretes automaticamente" e escolha os dias
+   (`1, 0` = véspera e dia; acrescente `-3` para avisar três dias depois do vencimento).
+
+**Consentimento:** a Meta exige que o cliente tenha aceitado receber mensagens. O formulário público pergunta, e quem
+não marcar fica como "não quer lembretes". Para os clientes antigos, use a caixa *"Não mandar lembretes de
+vencimento pelo WhatsApp"* na ficha do cliente.
+
 ## Backup
 
 Pelo próprio sistema: menu → **Baixar cópia de segurança** (só administrador) gera um arquivo JSON com a carteira

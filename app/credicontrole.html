@@ -187,6 +187,7 @@ const isSaldo=c=>!!c&&c.modalidade==="saldo";
 const cfg=k=>{const d={nome:"CrediControle",taxa:20,multa:2,mora:0.33,saldoInicial:0,corteDias:1,msg:"Olá {nome}, tudo bem? Passando para lembrar da parcela {parcela} do seu contrato, no valor de {valor}, com vencimento em {vencimento}. Qualquer dúvida estou à disposição."};return S.config[k]??d[k]};
 
 /* ---------- cálculo ---------- */
+/* calculo:inicio — o servidor (calculo.js) usa este trecho nos lembretes do WhatsApp; aqui dentro, só r2, as funções de data, cfg e today */
 function vencimento(c,k){ // k = 0-based
   const b=c.primeiroVenc;
   if(c.periodicidade==="quinzenal")return addDays(b,15*k);
@@ -232,6 +233,7 @@ function extrato(c,ref){
   return {linhas,saldoBase:Math.max(0,saldo),ultima:ult,diasHoje,jurosHoje,saldoHoje:quitado?0:r2(saldo+jurosHoje),pago,jurosPagos,capitalPago,quitado,taxaDia:td};
 }
 /* saldo:fim */
+/* calculo:fim */
 function statusC(c){
   if(c.cancelado)return "cancelado";
   if(isSaldo(c))return extrato(c).quitado?"quitado":c.vencimento<today()?"atrasado":"ativo";
@@ -454,7 +456,7 @@ function verCliente(id){
   const c=S.clientes.find(x=>x.id===id);if(!c)return;
   const cs=S.contratos.filter(k=>k.clienteId===id).sort((a,b)=>(b.dataContrato||"").localeCompare(a.dataContrato||""));
   openDrawer(`<div class="hd"><div><h2>${esc(c.nome)}${ex(c)}</h2><div class="muted">${c.status==="pre"?"Pré-cadastro":c.status==="bloqueado"?"Bloqueado":"Cliente ativo"}</div></div><button data-act="close" aria-label="Fechar">Fechar</button></div>
-  <div class="panel"><div class="body dl">${[["CPF",c.cpf],["Telefone",c.telefone],["E-mail",c.email],["Endereço",c.endereco],["Indicação",c.indicacao],["Renda mensal",c.renda?money(c.renda):""],["Valor pretendido",c.valorPretendido?money(c.valorPretendido):""],["Empresa",c.empresa],["Tempo de carteira",c.tempoRegistro],["Origem",c.origem==="link"?"Link de pré-cadastro"+(c.franquia?" · "+c.franquia:""):"Cadastro manual"],["Cadastrado em",fdate((c.criadoEm||"").slice(0,10))]].map(([k,v])=>`<div><span>${k}</span><b>${esc(v||"—")}</b></div>`).join("")}${c.referencias?`<div style="grid-column:1/-1;white-space:pre-line"><span>Contatos de referência</span>${esc(c.referencias)}</div>`:""}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
+  <div class="panel"><div class="body dl">${[["CPF",c.cpf],["Telefone",c.telefone],["E-mail",c.email],["Endereço",c.endereco],["Indicação",c.indicacao],["Renda mensal",c.renda?money(c.renda):""],["Valor pretendido",c.valorPretendido?money(c.valorPretendido):""],["Empresa",c.empresa],["Tempo de carteira",c.tempoRegistro],["Origem",c.origem==="link"?"Link de pré-cadastro"+(c.franquia?" · "+c.franquia:""):"Cadastro manual"],["Lembretes no WhatsApp",c.semLembrete?"Não quer receber":"Recebe"],["Cadastrado em",fdate((c.criadoEm||"").slice(0,10))]].map(([k,v])=>`<div><span>${k}</span><b>${esc(v||"—")}</b></div>`).join("")}${c.referencias?`<div style="grid-column:1/-1;white-space:pre-line"><span>Contatos de referência</span>${esc(c.referencias)}</div>`:""}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
   <div class="row"><button data-act="editCliente" data-id="${id}">Editar dados</button>${c.status!=="pre"?`<button class="pri" data-act="novoContrato" data-cli="${id}">Novo contrato</button>`:`<button class="pri" data-act="aprovar" data-id="${id}">Aprovar cadastro</button>`}<button data-act="bloquear" data-id="${id}">${c.status==="bloqueado"?"Desbloquear":"Bloquear"}</button><button class="danger" data-act="delCliente" data-id="${id}">Excluir</button></div>
   <section class="panel"><header><h2>Contratos</h2></header>${conRows(cs)}</section>`);
 }
@@ -499,10 +501,12 @@ function formCliente(c,pre){
     <label class="f">Tempo de carteira<input name="tempoRegistro" value="${esc(c.tempoRegistro)}"></label>
     <label class="f full">Contatos de referência<textarea name="referencias" style="min-height:56px" placeholder="Nome (parentesco) — telefone, um por linha">${esc(c.referencias)}</textarea></label>
     <label class="f full">Observações<textarea name="obs">${esc(c.obs)}</textarea></label>
+    <label class="f full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500;color:var(--fg)"><input type="checkbox" name="semLembrete" style="width:auto" ${c.semLembrete?"checked":""}>Não mandar lembretes de vencimento pelo WhatsApp</label>
     <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Salvar</button></div></form>`);
   $("#fCli").onsubmit=async e=>{e.preventDefault();const d=formData(e.target);
     const o={...c,...d,id:c.id||uid("cl"),status:c.status||(pre?"pre":"ativo"),criadoEm:c.criadoEm||new Date().toISOString()};
     ["renda","valorPretendido"].forEach(k=>o[k]=o[k]?+o[k]:null);
+    o.semLembrete=d.semLembrete==="on"; // caixa desmarcada não vem no formulário
     try{await put("clientes",o);closeTop();toast(c.id?"Cliente atualizado":"Cliente cadastrado");if($(".drawer"))verCliente(o.id)}catch(_){}};
 }
 function formContrato(cliId){

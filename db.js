@@ -19,7 +19,8 @@ async function poolEmbutido(pasta) {
   let fila = Promise.resolve();
   const vez = () => { let solta; const antes = fila; fila = new Promise(r => (solta = r)); return antes.then(() => solta); };
   const roda = async (sql, params = []) => {
-    const r = await lite.query(sql, params.map(p => (p !== null && typeof p === "object" ? JSON.stringify(p) : p)));
+    // objetos viram JSON (colunas jsonb); listas seguem como array do Postgres (ex.: "= any($1)")
+    const r = await lite.query(sql, params.map(p => (p !== null && typeof p === "object" && !Array.isArray(p) ? JSON.stringify(p) : p)));
     return { rows: r.rows, rowCount: r.affectedRows || r.rows.length }; // SELECT vem com affectedRows = 0
   };
   return {
@@ -47,6 +48,10 @@ export async function migrar() {
   await pool.query("alter table usuarios add column if not exists trocar_senha boolean not null default false");
   // quem existia antes desta versão nunca trocou a senha inicial (a do administrador está nas variáveis do servidor)
   if (!tinhaTroca) await pool.query("update usuarios set trocar_senha = true");
+  // um registro por lembrete (contrato + parcela + vencimento + dia do aviso): garante que ninguém recebe duas vezes
+  await pool.query(`create table if not exists lembretes(
+    chave text primary key, quando timestamptz not null default now(), contrato_id text, cliente_id text, nome text,
+    telefone text, valor numeric, vencimento text, status text not null, erro text, wamid text)`);
   await pool.query(`create table if not exists auditoria(
     id bigserial primary key, quando timestamptz not null default now(), usuario_id integer, usuario text,
     acao text not null, colecao text, doc_id text, antes jsonb, depois jsonb, ip text)`);
@@ -132,6 +137,21 @@ export async function listarAuditoria({ antesDe, usuarioId, colecao, busca }) {
     ${onde.length ? "where " + onde.join(" and ") : ""} order by id desc limit 100`, p);
   return r.rows.map(x => ({ ...x, id: Number(x.id) }));
 }
+
+export const lembretes = {
+  // Reserva o lembrete para envio. Devolve false se já foi enviado (ou está sendo); lembrete que deu erro pode tentar de novo.
+  reservar: async l => (await pool.query(
+    `insert into lembretes (chave, contrato_id, cliente_id, nome, telefone, valor, vencimento, status) values ($1, $2, $3, $4, $5, $6, $7, $8)
+     on conflict (chave) do update set status = excluded.status, quando = now(), erro = null where lembretes.status = 'erro' returning chave`,
+    [l.chave, l.contratoId, l.clienteId, l.nome, l.telefone, l.valor, l.venc, l.status])).rowCount > 0,
+  concluir: async (chave, { status, erro = null, wamid = null }) =>
+    pool.query("update lembretes set status = $2, erro = $3, wamid = $4, quando = now() where chave = $1", [chave, status, erro, wamid]),
+  situacao: async chaves => chaves.length
+    ? Object.fromEntries((await pool.query("select chave, status, erro from lembretes where chave = any($1)", [chaves])).rows.map(r => [r.chave, r]))
+    : {},
+  recentes: async () => (await pool.query("select chave, quando, nome, telefone, valor, vencimento, status, erro from lembretes order by quando desc limit 100")).rows
+    .map(r => ({ ...r, valor: r.valor === null ? null : Number(r.valor) })),
+};
 
 export const usuarios = {
   contar: async () => Number((await pool.query("select count(*) as n from usuarios")).rows[0].n),

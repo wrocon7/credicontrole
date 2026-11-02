@@ -1,0 +1,22 @@
+# Chama o CrediControle todo dia para mandar os lembretes de vencimento pelo WhatsApp.
+# Precisa de dois "secrets" no repositório (Settings → Secrets and variables → Actions):
+#   APP_URL    endereço do sistema, sem barra no fim (ex.: https://credicontrole.onrender.com)
+#   CRON_TOKEN o mesmo valor da variável CRON_TOKEN cadastrada na Render
+name: Lembretes de vencimento
+on:
+  schedule:
+    - cron: "0 12 * * *" # 12h UTC = 9h em Brasília (o GitHub pode atrasar alguns minutos)
+  workflow_dispatch: {}  # botão "Run workflow" para rodar na hora
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviar lembretes
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_TOKEN" ]; then echo "Cadastre os secrets APP_URL e CRON_TOKEN para ligar os lembretes."; exit 0; fi
+          # a Render grátis pode estar "dormindo": a primeira chamada acorda, as tentativas seguintes esperam
+          curl -fsS --retry 4 --retry-delay 30 --retry-all-errors --max-time 120 \
+            -X POST "$APP_URL/api/tarefas/lembretes" -H "Authorization: Bearer $CRON_TOKEN"

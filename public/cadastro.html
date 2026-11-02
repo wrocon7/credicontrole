@@ -50,6 +50,7 @@
     <section class="card"><div class="form">
       <label class="oculto" aria-hidden="true">Site<input name="site" tabindex="-1" autocomplete="off"></label>
       <label class="check"><input type="checkbox" name="aceite" required><span id="aviso"></span></label>
+      <label class="check"><input type="checkbox" name="aceitaWhatsapp"><span>Quero receber pelo WhatsApp os lembretes de vencimento.</span></label>
       <div id="erro" class="erro" hidden></div>
       <button class="pri" type="submit">Enviar pré-cadastro</button>
     </div></section>
@@ -89,7 +90,7 @@ f.onsubmit = async e => {
   e.preventDefault();
   const b = f.querySelector("button[type=submit]"); b.disabled = true; erro.hidden = true;
   const dados = Object.fromEntries(new FormData(f));
-  dados.aceite = f.aceite.checked; dados.franquia = franquia;
+  dados.aceite = f.aceite.checked; dados.aceitaWhatsapp = f.aceitaWhatsapp.checked; dados.franquia = franquia;
   try {
     const r = await fetch("/api/publico/precadastro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) });
     const j = await r.json().catch(() => ({}));
