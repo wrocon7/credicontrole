@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Auditoria · CrediControle</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Figtree:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/assets/base.css">
+<style>
+.page{max-width:1100px}
+.filtros{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.filtros>*{flex:1;min-width:160px}
+td.mud{font-size:13px;max-width:460px}
+td.mud div{overflow-wrap:anywhere}
+.de{color:var(--bad)}.para{color:var(--accent)}
+@media (max-width:760px){
+  .tbl thead{display:none}
+  .tbl tr,.tbl td{display:block}
+  .tbl tr{padding:10px 0;border-bottom:1px solid var(--line)}
+  .tbl td{border:0;padding:3px 0}
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <p><a href="/" style="color:var(--accent)">← Voltar ao sistema</a></p>
+  <h1>Auditoria</h1>
+  <p class="muted" style="margin-top:0">Tudo o que foi criado, alterado ou excluído, quem fez e quando. Também ficam aqui os logins, as trocas de senha e as cópias de segurança.</p>
+  <div class="filtros">
+    <select id="usuario" aria-label="Usuário"><option value="">Todos os usuários</option></select>
+    <select id="colecao" aria-label="Tipo de registro"><option value="">Todos os registros</option><option value="contratos">Contratos</option><option value="clientes">Clientes</option><option value="transacoes">Caixa</option><option value="config">Configurações</option><option value="usuarios">Usuários</option></select>
+    <input id="busca" type="search" placeholder="Buscar (nome, valor, código…)" aria-label="Buscar">
+  </div>
+  <div id="erro" class="erro" hidden></div>
+  <section class="card" style="padding:0"><div class="tbl"><table><thead><tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Mudança</th></tr></thead><tbody id="lista"></tbody></table></div></section>
+  <button id="mais" hidden>Carregar mais</button>
+</main>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ACOES = { criar: "Criou", alterar: "Alterou", excluir: "Excluiu", login: "Entrou", login_falhou: "Login recusado", trocou_senha: "Trocou a senha",
+  usuario_criado: "Cadastrou usuário", usuario_alterado: "Alterou usuário", backup: "Baixou cópia de segurança", precadastro_publico: "Pré-cadastro pelo link" };
+const COL = { contratos: "contrato", clientes: "cliente", transacoes: "lançamento do caixa", config: "configurações", usuarios: "usuário" };
+const curto = v => { const s = typeof v === "string" ? v : JSON.stringify(v); return s == null ? "—" : s.length > 140 ? s.slice(0, 140) + "…" : s; };
+let ultimo = null;
+async function api(url) {
+  const r = await fetch(url);
+  if (r.status === 401) location.href = "/login";
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.erro || "Erro " + r.status);
+  return j;
+}
+function mudanca(x) {
+  const d = x.depois || {}, a = x.antes || {};
+  if (x.acao === "criar" || x.acao === "precadastro_publico") return esc(d.nome || d.descricao || d.categoria || "");
+  if (x.acao === "excluir") return esc(a.nome || a.descricao || a.categoria || "");
+  return Object.keys({ ...a, ...d }).map(k => `<div><b>${esc(k)}</b>: <span class="de">${esc(curto(a[k]))}</span> → <span class="para">${esc(curto(d[k]))}</span></div>`).join("");
+}
+async function carrega(maisAntigos) {
+  try {
+    document.getElementById("erro").hidden = true;
+    const p = new URLSearchParams();
+    for (const k of ["usuario", "colecao", "busca"]) { const v = document.getElementById(k).value.trim(); if (v) p.set(k, v); }
+    if (maisAntigos && ultimo) p.set("antes", ultimo);
+    const linhas = await api("/api/auditoria?" + p);
+    const html = linhas.map(x => `<tr><td style="white-space:nowrap">${new Date(x.quando).toLocaleString("pt-BR")}</td><td>${esc((x.usuario || "—").replace(/ <.*>$/, ""))}${x.ip ? `<div class="muted" style="font-size:12px">${esc(x.ip)}</div>` : ""}</td>
+      <td>${esc(ACOES[x.acao] || x.acao)}${x.colecao ? ` ${esc(COL[x.colecao] || x.colecao)}` : ""}${x.doc_id ? `<div class="muted" style="font-size:12px">${esc(x.doc_id)}</div>` : ""}</td><td class="mud">${mudanca(x)}</td></tr>`).join("");
+    const lista = document.getElementById("lista");
+    lista.innerHTML = (maisAntigos ? lista.innerHTML : "") + (html || (maisAntigos ? "" : '<tr><td colspan="4" class="muted">Nada encontrado.</td></tr>'));
+    if (linhas.length) ultimo = linhas[linhas.length - 1].id;
+    document.getElementById("mais").hidden = linhas.length < 100;
+  } catch (e) { const el = document.getElementById("erro"); el.textContent = e.message; el.hidden = false; }
+}
+api("/api/usuarios").then(us => { document.getElementById("usuario").innerHTML += us.map(u => `<option value="${u.id}">${esc(u.nome)}</option>`).join(""); }).catch(() => {});
+let t;
+for (const id of ["usuario", "colecao"]) document.getElementById(id).onchange = () => carrega(false);
+document.getElementById("busca").oninput = () => { clearTimeout(t); t = setTimeout(() => carrega(false), 350); };
+document.getElementById("mais").onclick = () => carrega(true);
+carrega(false);
+</script>
+</body>
+</html>

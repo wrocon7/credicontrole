@@ -24,6 +24,7 @@
     });
     if (r.status === 401) { location.href = "/login"; throw new Error("Sessão encerrada"); }
     const j = await r.json().catch(() => ({}));
+    if (r.status === 403 && j.trocarSenha) { location.href = "/trocar-senha"; throw new Error(j.erro); }
     if (!r.ok) throw new Error(j.erro || "Erro " + r.status);
     return j;
   }
@@ -65,21 +66,33 @@
   };
 
   window.claude = { use: async nome => { if (nome === "db") { await pronto; return db; } if (nome === "user") return { can: async () => true }; return null; } };
-  pronto = (async () => { eu = await api("GET", "/api/eu"); await puxa(true); })();
+  pronto = (async () => {
+    eu = await api("GET", "/api/eu");
+    if (eu.trocarSenha) { location.href = "/trocar-senha"; return; }
+    // Operador não vê o que só o administrador pode fazer (o servidor recusa de qualquer jeito).
+    if (eu.papel !== "admin") {
+      const s = document.createElement("style");
+      s.textContent = ['[data-act="delContrato"]', '[data-act="estornar"]', '[data-act="estornarSaldo"]', '[data-act="cancelarC"]', '[data-act="delCliente"]',
+        '[data-act="delLanc"]', '[data-act="limparEx"]', '#nav a[data-v="ajustes"]'].join(",") + "{display:none!important}";
+      document.head.appendChild(s);
+    }
+    await puxa(true);
+  })();
   setInterval(() => puxa(false), 4000);
   setInterval(() => puxa(true), 120000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) puxa(false); });
 
-  // Rodapé do menu: usuário, link público de pré-cadastro, usuários (admin) e sair.
+  // Rodapé do menu: usuário, link público de pré-cadastro, administração (só admin), senha e sair.
   document.addEventListener("DOMContentLoaded", () => pronto.then(() => {
     const side = document.getElementById("side");
-    if (!side) return;
+    if (!side || !eu || eu.trocarSenha) return;
     const a = "color:var(--side-fg);text-decoration:none";
     const box = document.createElement("div");
     box.style.cssText = "margin-top:18px;padding:14px 10px 4px;border-top:1px solid rgba(255,255,255,.1);display:grid;gap:8px;font-size:13px";
-    box.innerHTML = `<div style="color:var(--side-muted)">Conectado como<br><b style="color:#fff">${esc(eu.nome)}</b></div>
+    box.innerHTML = `<div style="color:var(--side-muted)">Conectado como<br><b style="color:#fff">${esc(eu.nome)}</b> · ${eu.papel === "admin" ? "administrador" : "operador"}</div>
       <a href="#" id="ccLink" style="${a}">Copiar link de pré-cadastro</a>
-      ${eu.papel === "admin" ? `<a href="/usuarios" style="${a}">Usuários</a>` : ""}
+      ${eu.papel === "admin" ? `<a href="/usuarios" style="${a}">Usuários</a><a href="/auditoria" style="${a}">Auditoria</a><a href="/api/backup" download style="${a}">Baixar cópia de segurança</a>` : ""}
+      <a href="/trocar-senha" style="${a}">Minha senha</a>
       <a href="#" id="ccSair" style="${a}">Sair</a>`;
     side.appendChild(box);
     document.getElementById("ccLink").onclick = e => {

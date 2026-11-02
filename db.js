@@ -41,6 +41,15 @@ export async function migrar() {
     id serial primary key, email text not null unique, nome text not null, senha text not null,
     papel text not null default 'operador', ativo boolean not null default true,
     criado timestamptz not null default now())`);
+  // sessao_versao: sobe a cada troca de senha e derruba os logins antigos. trocar_senha: obriga a trocar no próximo acesso.
+  await pool.query("alter table usuarios add column if not exists sessao_versao integer not null default 1");
+  const tinhaTroca = (await pool.query("select 1 from information_schema.columns where table_name = 'usuarios' and column_name = 'trocar_senha'")).rowCount > 0;
+  await pool.query("alter table usuarios add column if not exists trocar_senha boolean not null default false");
+  // quem existia antes desta versão nunca trocou a senha inicial (a do administrador está nas variáveis do servidor)
+  if (!tinhaTroca) await pool.query("update usuarios set trocar_senha = true");
+  await pool.query(`create table if not exists auditoria(
+    id bigserial primary key, quando timestamptz not null default now(), usuario_id integer, usuario text,
+    acao text not null, colecao text, doc_id text, antes jsonb, depois jsonb, ip text)`);
 }
 
 // desde = última versão que a tela já tem; 0 = tudo (sem os excluídos).
@@ -96,6 +105,10 @@ export async function excluir(colecao, id) {
     [colecao, id]);
 }
 
+export async function todosDocs() {
+  return (await pool.query("select colecao, id, dados from docs where not excluido order by colecao, id")).rows;
+}
+
 export async function clientePorCpf(cpfDigitos) {
   const r = await pool.query(
     "select id, dados from docs where colecao = 'clientes' and not excluido and regexp_replace(dados->>'cpf', '[^0-9]', '', 'g') = $1 limit 1",
@@ -103,16 +116,36 @@ export async function clientePorCpf(cpfDigitos) {
   return r.rows[0] ? { id: r.rows[0].id, ...r.rows[0].dados } : null;
 }
 
+export async function auditar({ usuario, acao, colecao = null, id = null, antes = null, depois = null, ip = null }) {
+  await pool.query("insert into auditoria (usuario_id, usuario, acao, colecao, doc_id, antes, depois, ip) values ($1, $2, $3, $4, $5, $6, $7, $8)",
+    [usuario?.id ?? null, usuario ? `${usuario.nome} <${usuario.email}>` : null, acao, colecao, id, antes, depois, ip]);
+}
+
+// Mais recentes primeiro, 100 por página; `antesDe` = id do último registro já mostrado.
+export async function listarAuditoria({ antesDe, usuarioId, colecao, busca }) {
+  const onde = [], p = [];
+  if (antesDe) { p.push(antesDe); onde.push(`id < $${p.length}`); }
+  if (usuarioId) { p.push(usuarioId); onde.push(`usuario_id = $${p.length}`); }
+  if (colecao) { p.push(colecao); onde.push(`colecao = $${p.length}`); }
+  if (busca) { p.push(`%${busca}%`); onde.push(`(doc_id ilike $${p.length} or acao ilike $${p.length} or antes::text ilike $${p.length} or depois::text ilike $${p.length})`); }
+  const r = await pool.query(`select id, quando, usuario_id, usuario, acao, colecao, doc_id, antes, depois, ip from auditoria
+    ${onde.length ? "where " + onde.join(" and ") : ""} order by id desc limit 100`, p);
+  return r.rows.map(x => ({ ...x, id: Number(x.id) }));
+}
+
 export const usuarios = {
   contar: async () => Number((await pool.query("select count(*) as n from usuarios")).rows[0].n),
   porEmail: async email => (await pool.query("select * from usuarios where lower(email) = lower($1)", [email])).rows[0] || null,
   porId: async id => (await pool.query("select * from usuarios where id = $1", [id])).rows[0] || null,
-  listar: async () => (await pool.query("select id, email, nome, papel, ativo, criado from usuarios order by nome")).rows,
-  criar: async ({ email, nome, senha, papel }) =>
-    (await pool.query("insert into usuarios (email, nome, senha, papel) values ($1, $2, $3, $4) returning id", [email, nome, senha, papel])).rows[0].id,
-  alterar: async (id, campos) => {
-    const ks = Object.keys(campos);
-    if (!ks.length) return;
-    await pool.query(`update usuarios set ${ks.map((k, i) => `${k} = $${i + 2}`).join(", ")} where id = $1`, [id, ...ks.map(k => campos[k])]);
+  listar: async () => (await pool.query("select id, email, nome, papel, ativo, trocar_senha, criado from usuarios order by nome")).rows,
+  criar: async ({ email, nome, senha, papel, trocarSenha = true }) =>
+    (await pool.query("insert into usuarios (email, nome, senha, papel, trocar_senha) values ($1, $2, $3, $4, $5) returning id",
+      [email, nome, senha, papel, trocarSenha])).rows[0].id,
+  // campos vêm só do servidor (lista fechada de colunas); `derrubarSessoes` invalida os logins abertos
+  alterar: async (id, campos, derrubarSessoes = false) => {
+    const ks = Object.keys(campos), sets = ks.map((k, i) => `${k} = $${i + 2}`);
+    if (derrubarSessoes) sets.push("sessao_versao = sessao_versao + 1");
+    if (!sets.length) return;
+    await pool.query(`update usuarios set ${sets.join(", ")} where id = $1`, [id, ...ks.map(k => campos[k])]);
   },
 };

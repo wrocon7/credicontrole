@@ -39,7 +39,7 @@ const mostra = m => { erro.textContent = m; erro.hidden = !m; };
 async function carrega() {
   const us = await api("GET", "/api/usuarios");
   document.getElementById("lista").innerHTML = us.map(u => `<tr><td><b>${esc(u.nome)}</b></td><td>${esc(u.email)}</td><td>${u.papel === "admin" ? "Administrador" : "Operador"}</td>
-    <td>${u.ativo ? '<span class="pill ok">Ativo</span>' : '<span class="pill">Desativado</span>'}</td>
+    <td>${u.ativo ? '<span class="pill ok">Ativo</span>' : '<span class="pill">Desativado</span>'}${u.ativo && u.trocar_senha ? ' <span class="pill">vai trocar a senha</span>' : ""}</td>
     <td style="white-space:nowrap"><button class="sm" data-a="ativo" data-id="${u.id}" data-v="${!u.ativo}">${u.ativo ? "Desativar" : "Reativar"}</button> <button class="sm" data-a="senha" data-id="${u.id}">Nova senha</button></td></tr>`).join("");
 }
 document.getElementById("lista").onclick = async e => {
@@ -47,7 +47,7 @@ document.getElementById("lista").onclick = async e => {
   try {
     mostra("");
     if (b.dataset.a === "ativo") await api("PATCH", "/api/usuarios/" + b.dataset.id, { ativo: b.dataset.v === "true" });
-    else { const s = prompt("Nova senha (8+ caracteres):"); if (!s) return; await api("PATCH", "/api/usuarios/" + b.dataset.id, { senha: s }); alert("Senha alterada."); }
+    else { const s = prompt("Senha provisória (8+ caracteres). A pessoa vai trocar no próximo acesso:"); if (!s) return; await api("PATCH", "/api/usuarios/" + b.dataset.id, { senha: s }); alert("Senha provisória definida. Os logins abertos dessa pessoa foram encerrados."); }
     await carrega();
   } catch (x) { mostra(x.message); }
 };

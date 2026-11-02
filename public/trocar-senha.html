@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Trocar senha · CrediControle</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Figtree:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/assets/base.css">
+</head>
+<body>
+<main class="page narrow">
+  <div class="brand"><i>C</i>CrediControle</div>
+  <div class="card">
+    <h1>Trocar senha</h1>
+    <p class="muted" id="motivo" style="margin-top:0">Ao trocar, os outros aparelhos em que você entrou saem do sistema.</p>
+    <form id="f" class="form">
+      <label class="f">Senha atual<input name="atual" type="password" autocomplete="current-password" required></label>
+      <label class="f">Nova senha (8+ caracteres)<input name="nova" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label class="f">Repita a nova senha<input name="repete" type="password" autocomplete="new-password" minlength="8" required></label>
+      <div id="erro" class="erro" hidden></div>
+      <button class="pri" type="submit">Trocar senha</button>
+      <a href="/" id="voltar" style="color:var(--accent);text-align:center">Voltar ao sistema</a>
+    </form>
+  </div>
+</main>
+<script>
+const f = document.getElementById("f"), erro = document.getElementById("erro");
+fetch("/api/eu").then(r => (r.status === 401 ? (location.href = "/login") : r.json())).then(eu => {
+  if (eu && eu.trocarSenha) {
+    document.getElementById("motivo").textContent = "Para continuar, troque a senha que você recebeu por uma só sua.";
+    document.getElementById("voltar").hidden = true;
+  }
+}).catch(() => {});
+f.onsubmit = async e => {
+  e.preventDefault();
+  erro.hidden = true;
+  if (f.nova.value !== f.repete.value) { erro.textContent = "As duas senhas novas não são iguais."; erro.hidden = false; return; }
+  const b = f.querySelector("button"); b.disabled = true;
+  try {
+    const r = await fetch("/api/minha-senha", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ atual: f.atual.value, nova: f.nova.value }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || "Não foi possível trocar a senha.");
+    location.href = "/";
+  } catch (x) { erro.textContent = x.message; erro.hidden = false; b.disabled = false; }
+};
+</script>
+</body>
+</html>

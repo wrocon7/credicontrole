@@ -21,19 +21,20 @@ export function confereSenha(senha, guardada) {
 
 const assina = texto => crypto.createHmac("sha256", SEGREDO).update(texto).digest("base64url");
 
-export function criarToken(usuarioId) {
-  const corpo = `${usuarioId}.${Date.now() + DURACAO_SESSAO}`;
+// O token leva a versão de sessão do usuário: trocar a senha sobe a versão e os tokens antigos deixam de valer.
+export function criarToken(usuario) {
+  const corpo = `${usuario.id}.${usuario.sessao_versao}.${Date.now() + DURACAO_SESSAO}`;
   return `${corpo}.${assina(corpo)}`;
 }
 
-// Devolve o id do usuário, ou null se o token é inválido ou venceu.
+// Devolve { id, versao }, ou null se o token é inválido ou venceu.
 export function lerToken(token) {
-  const [id, vence, assinatura] = String(token || "").split(".");
+  const [id, versao, vence, assinatura] = String(token || "").split(".");
   if (!assinatura) return null;
-  const esperada = assina(`${id}.${vence}`);
+  const esperada = assina(`${id}.${versao}.${vence}`);
   if (esperada.length !== assinatura.length || !crypto.timingSafeEqual(Buffer.from(esperada), Buffer.from(assinatura))) return null;
-  if (!(+vence > Date.now())) return null;
-  return +id || null;
+  if (!(+vence > Date.now()) || !(+id > 0)) return null;
+  return { id: +id, versao: +versao };
 }
 
 export function lerCookies(req) {

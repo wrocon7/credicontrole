@@ -63,14 +63,31 @@ a pasta com o app parado.
 
 ## Primeiro acesso
 
-1. Entre com o administrador e troque a senha em **Usuários → Nova senha**.
-2. Cadastre os operadores em **Usuários**.
+1. Entre com o administrador. O sistema pede para trocar a senha inicial (a das variáveis do servidor) antes de continuar.
+2. Cadastre os operadores em **Usuários** com uma senha provisória. Cada um troca a dele no primeiro acesso.
 3. Em **Configurações**, preencha **"Nome da empresa no formulário público"** e, se quiser, o texto de
    privacidade. A LGPD exige que a pessoa saiba quem recebe os dados.
 4. **Copiar link de pré-cadastro** fica no rodapé do menu. Mande para os clientes, acrescentando `?f=` com a franquia se quiser.
 5. Apague os dados de teste, se tiver usado o banco embutido para testar.
 
+## Segurança
+
+- **Papéis:** o *operador* cadastra clientes, cria contratos e registra pagamentos. Só o *administrador* exclui,
+  estorna, cancela contrato, mexe em Configurações, gerencia usuários, vê a auditoria e baixa a cópia de segurança.
+  O servidor recusa essas ações, não só a tela.
+- **Auditoria** (menu → Auditoria): quem criou, alterou ou excluiu o quê, quando e de qual IP, com o valor antes e
+  depois. Também registra logins (inclusive os recusados), trocas de senha, cópias baixadas e pré-cadastros pelo link.
+- **Senhas:** guardadas com scrypt. Trocar a senha (menu → Minha senha) derruba os logins abertos nos outros
+  aparelhos. Senha definida pelo administrador é provisória: a pessoa troca no próximo acesso.
+- **Navegador:** HTTPS obrigatório (HSTS), scripts só do próprio servidor (CSP com nonce), sem moldura de outros
+  sites e sem cache nas respostas da API.
+- **Ao atualizar para esta versão** todos precisam entrar de novo, e os usuários que já existiam são obrigados a
+  trocar a senha.
+
 ## Backup
+
+Pelo próprio sistema: menu → **Baixar cópia de segurança** (só administrador) gera um arquivo JSON com a carteira
+inteira. Guarde num lugar seguro, porque ele tem dados pessoais.
 
 No Postgres:
 ```bash
