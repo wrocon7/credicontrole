@@ -109,6 +109,25 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:60
   .menu-btn{display:inline-flex}
   .form{grid-template-columns:minmax(0,1fr)}
   .kpi .v{font-size:20px}
+  /* modo celular: barra do topo fixa, campos sem zoom automático do iPhone, tabelas viram cartões */
+  .top{position:sticky;top:0;z-index:30;background:var(--bg);margin:-20px -16px 14px;padding:10px 16px;border-bottom:1px solid var(--line)}
+  .top h1{font-size:18px}
+  input,select,textarea{font-size:16px}
+  button,.btn{padding:10px 14px}
+  button.sm,.btn.sm{padding:8px 12px}
+  .tbl table,.tbl tbody,.tbl tr,.tbl td{display:block;width:100%}
+  .tbl thead{display:none}
+  .tbl tr{padding:10px 14px;border-bottom:1px solid var(--line)}
+  .tbl tr:last-child{border-bottom:0}
+  .tbl td{display:flex;justify-content:space-between;align-items:center;gap:12px;border:0;padding:3px 0;text-align:right;white-space:normal}
+  .tbl td::before{content:attr(data-l);font-family:var(--f-body);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:left;flex:none}
+  .tbl td:first-child{font-size:15px;text-align:left}
+  .tbl td:first-child::before{display:none}
+  .tbl td:not([data-l]){justify-content:flex-end}
+  .tbl td .row{justify-content:flex-end}
+  .drawer{padding-left:16px;padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .drawer .kpis{grid-template-columns:minmax(0,1fr)!important}
+  .modal{padding:16px}
 }
 @media (max-width:420px){.kpis{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){aside{transition:none}}
@@ -268,7 +287,9 @@ async function del(col,id){if(!canWrite){toast("Você tem acesso só de leitura.
 /* ---------- UI util ---------- */
 let toastT;
 function toast(m){clearTimeout(toastT);const el=document.createElement("div");el.className="toast";el.textContent=m;document.querySelectorAll(".toast").forEach(x=>x.remove());document.body.appendChild(el);toastT=setTimeout(()=>el.remove(),3200)}
-function openDrawer(html){$("#layer").innerHTML=`<div class="scrim" data-close="1"><div class="drawer" role="dialog" aria-modal="true">${html}</div></div>`}
+// No celular as tabelas viram cartões: cada célula ganha o nome da coluna para mostrar ao lado do valor.
+function rotular(el){el.querySelectorAll("table").forEach(t=>{const hs=[...t.querySelectorAll("thead th")].map(th=>th.textContent.trim());t.querySelectorAll("tbody tr").forEach(tr=>[...tr.children].forEach((td,i)=>{if(hs[i])td.dataset.l=hs[i]}))})}
+function openDrawer(html){$("#layer").innerHTML=`<div class="scrim" data-close="1"><div class="drawer" role="dialog" aria-modal="true">${html}</div></div>`;rotular($("#layer"))}
 function openModal(html){const l=document.createElement("div");l.className="scrim center";l.dataset.close="1";l.innerHTML=`<div class="modal" role="dialog" aria-modal="true">${html}</div>`;$("#layer").appendChild(l);const f=l.querySelector("input,select,textarea");f&&f.focus()}
 function closeTop(){const ls=$("#layer").querySelectorAll(".scrim");ls.length&&ls[ls.length-1].remove()}
 function confirmar(msg,ok,label="Confirmar"){openModal(`<h3>${esc(msg)}</h3><div class="row end"><button data-act="close">Voltar</button><button class="pri danger" id="cOk">${esc(label)}</button></div>`);$("#cOk").onclick=async()=>{closeTop();await ok()}}
@@ -305,7 +326,7 @@ function render(){
   const act=$("#topActions");
   act.innerHTML=({clientes:'<button class="pri" data-act="novoCliente">Novo cliente</button>',precadastro:'<button class="pri" data-act="novoCliente" data-pre="1">Novo pré-cadastro</button>',contratos:'<button class="pri" data-act="novoContrato">Novo contrato</button>',dashboard:'<button class="pri" data-act="novoContrato">Novo contrato</button>',caixa:'<button class="pri" data-act="novoLanc">Novo lançamento</button>'})[view]||"";
   const v=$("#view"),scroll=v.querySelector(".keep")?.scrollTop;
-  v.innerHTML=VIEWS[view]();
+  v.innerHTML=VIEWS[view]();rotular(v);
   const k=v.querySelector(".keep");if(k&&scroll)k.scrollTop=scroll;
   restoreFocus();
 }
@@ -667,7 +688,8 @@ document.addEventListener("submit",async e=>{
   if(e.target.id!=="fCfg")return;e.preventDefault();const d=formData(e.target);
   try{if(!canWrite)throw 0;await db.doc("config/geral").set({nome:d.nome,taxa:+d.taxa,saldoInicial:+d.saldoInicial||0,multa:+d.multa,mora:+d.mora,corteDias:Math.max(1,parseInt(d.corteDias)||1),msg:d.msg,empresaPublica:(d.empresaPublica||"").trim(),avisoPrivacidade:(d.avisoPrivacidade||"").trim()});toast("Configurações salvas")}catch(_){toast("Não foi possível salvar.")}
 });
-$("#menuBtn").onclick=()=>$("#side").classList.toggle("open");
+$("#menuBtn").onclick=e=>{e.stopPropagation();$("#side").classList.toggle("open")};
+document.addEventListener("click",e=>{const s=$("#side");if(s.classList.contains("open")&&!s.contains(e.target)&&!e.target.closest("#menuBtn"))s.classList.remove("open")},true); // tocar fora fecha o menu no celular
 function route(){const h=location.hash.slice(1);view=TITLES[h]?h:"dashboard";focusId=null;$("#side").classList.remove("open");$("#layer").innerHTML="";render();window.scrollTo(0,0)}
 window.addEventListener("hashchange",route);
 route();boot();
