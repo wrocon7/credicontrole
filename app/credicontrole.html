@@ -144,7 +144,7 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:60
       <a href="#clientes" data-v="clientes">Clientes</a>
       <a href="#contratos" data-v="contratos">Contratos</a>
       <a href="#inadimplentes" data-v="inadimplentes">Inadimplentes <span class="cnt" id="cntInad" hidden></span></a>
-      <a href="#cobrancas" data-v="cobrancas">Cobranças</a>
+      <a href="#cobrancas" data-v="cobrancas">Cobranças <span class="cnt" id="cntLemb" hidden></span></a>
       <div class="navlbl">Financeiro</div>
       <a href="#caixa" data-v="caixa">Caixa e transações</a>
       <a href="#ajustes" data-v="ajustes">Configurações</a>
@@ -165,7 +165,7 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:60
 <script>
 (function(){
 "use strict";
-const S={clientes:[],contratos:[],transacoes:[],config:{},loaded:{}};
+const S={clientes:[],contratos:[],transacoes:[],config:{},avisos:[],lemb:{},loaded:{}};
 let db=null, canWrite=true, view="dashboard", sub={};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -277,6 +277,9 @@ async function boot(){
     db.collection(col).limit(1000).onSnapshot(s=>{S[col]=s.docs.map(d=>({id:d.id,...d.data()}));S.loaded[col]=1;render()},err);
   }
   db.doc("config/geral").onSnapshot(s=>{S.config=s.exists?s.data():{};S.loaded.config=1;render()},err);
+  // lembretes: dias de aviso (config/lembretes) e quem já foi avisado (avisos)
+  db.doc("config/lembretes").onSnapshot(s=>{S.lemb=s.exists?s.data():{};render()},err);
+  db.collection("avisos").limit(1000).onSnapshot(s=>{S.avisos=s.docs.map(d=>({id:d.id,...d.data()}));render()},err);
 }
 function err(e){toast("Erro no banco de dados: "+(e&&e.message||e))}
 async function put(col,obj){
@@ -314,7 +317,7 @@ const short=v=>v>=1e6?"R$ "+(v/1e6).toLocaleString("pt-BR",{maximumFractionDigit
 
 /* ---------- views ---------- */
 const TITLES={dashboard:"Painel",precadastro:"Pré-cadastro",clientes:"Clientes",contratos:"Contratos",inadimplentes:"Inadimplentes",cobrancas:"Cobranças",caixa:"Caixa e transações",ajustes:"Configurações"};
-const ui={cliQ:"",cliSt:"todos",conQ:"",conSt:"todos",cobTab:"hoje",cxMes:today().slice(0,7)};
+const ui={cliQ:"",cliSt:"todos",conQ:"",conSt:"todos",cobTab:"lembretes",cxMes:today().slice(0,7)};
 
 function render(){
   if(!(S.loaded.clientes&&S.loaded.contratos&&S.loaded.transacoes&&S.loaded.config))return;
@@ -323,7 +326,7 @@ function render(){
   $("#title").textContent=TITLES[view];
   const pre=S.clientes.filter(c=>c.status==="pre").length;
   const inad=new Set(abertas().filter(emInad).map(x=>x.c.clienteId)).size;
-  setCnt("#cntPre",pre);setCnt("#cntInad",inad);
+  setCnt("#cntPre",pre);setCnt("#cntInad",inad);setCnt("#cntLemb",lembretesHoje().filter(x=>x.situacao==="avisar").length);
   $("#banner").innerHTML=canWrite?"":'<div class="banner">Você está vendo esta carteira em modo somente leitura.</div>';
   const act=$("#topActions");
   act.innerHTML=({clientes:'<button class="pri" data-act="novoCliente">Novo cliente</button>',precadastro:'<button class="pri" data-act="novoCliente" data-pre="1">Novo pré-cadastro</button>',contratos:'<button class="pri" data-act="novoContrato">Novo contrato</button>',dashboard:'<button class="pri" data-act="novoContrato">Novo contrato</button>',caixa:'<button class="pri" data-act="novoLanc">Novo lançamento</button>'})[view]||"";
@@ -420,12 +423,37 @@ VIEWS.inadimplentes=()=>{
   return nota+`<div class="kpis">${kpi("Clientes inadimplentes",rows.length,"no corte de dias ou marcados")}${kpi("Contratos",new Set(at.map(x=>x.c.id)).size,"em aberto")}${kpi("Total devido hoje",money(tot),"com encargos","bad")}${kpi("Maior atraso",rows[0].max+" dias",rows[0].c.nome)}</div>
   <section class="panel"><div class="tbl"><table><thead><tr><th>Cliente</th><th>Telefone</th><th class="num">Parcelas</th><th class="num">Dias de atraso</th><th class="num">Valor original</th><th class="num">Encargos</th><th class="num">Total devido</th><th>Motivo</th><th></th></tr></thead><tbody>${rows.map(r=>{const orig=r.xs.reduce((a,x)=>a+x.p.valor-x.e.pago,0);return `<tr><td><b>${esc(r.c.nome)}</b>${ex(r.c)}</td><td>${esc(r.c.telefone||"—")}</td><td class="num">${r.xs.length}</td><td class="num">${r.max?`<span class="pill ${r.max>30?"bad":"warn"}">${r.max}</span>`:'<span class="pill bad">marcado</span>'}</td><td class="num">${money(orig)}</td><td class="num">${money(r.tot-orig)}</td><td class="num"><b>${money(r.tot)}</b></td><td>${r.mot.length?esc(r.mot.join(" · ")):'<span class="muted">—</span>'}</td><td><div class="row"><button class="sm" data-act="cobrar" data-id="${r.xs[0].c.id}" data-n="${r.xs[0].p.n}">Cobrar</button><button class="sm" data-act="verContrato" data-id="${r.xs[0].c.id}">Contrato</button></div></td></tr>`}).join("")}</tbody></table></div></section>`;
 };
+// Lembretes de hoje: o que vence nos dias configurados (padrão: amanhã e hoje). "Abrir conversa" abre o WhatsApp de
+// quem está usando (celular ou WhatsApp Web) com a mensagem pronta, e marca o cliente como avisado.
+const diasLemb=()=>Array.isArray(S.lemb.dias)&&S.lemb.dias.length?S.lemb.dias:[1,0];
+const telWa=t=>{const d=String(t||"").replace(/\D/g,"");return d.length===10||d.length===11?"55"+d:/^55\d{10,11}$/.test(d)?d:""};
+function lembretesHoje(){
+  const t=today(),ds=diasLemb(),av=new Map(S.avisos.map(a=>[a.id,a]));
+  return abertas().map(x=>({...x,falta:days(t,x.p.venc)})).filter(x=>ds.includes(x.falta)).map(x=>{
+    const cl=cli(x.c.clienteId),id=[x.c.id,isSaldo(x.c)?"saldo":x.p.n,x.p.venc,x.falta].join("_"),tel=telWa(cl.telefone),aviso=av.get(id);
+    return {...x,cl,id,tel,aviso,situacao:aviso?"avisado":cl.semLembrete?"recusa":!tel?"semtel":"avisar"};
+  }).sort((a,b)=>a.falta-b.falta||String(a.cl.nome).localeCompare(String(b.cl.nome)));
+}
+const textoLembrete=x=>cfg("msg").replace(/\{nome\}/g,(x.cl.nome||"").split(" ")[0]).replace(/\{parcela\}/g,isSaldo(x.c)?"única":`${x.p.n}/${x.c.parcelas.length}`).replace(/\{valor\}/g,money(x.e.devido)).replace(/\{vencimento\}/g,fdate(x.p.venc)).replace(/\{atraso\}/g,x.e.atraso+" dias");
+const quandoVence=f=>f>1?`em ${f} dias`:f===1?"amanhã":f===0?"hoje":`${-f} dia${f<-1?"s":""} de atraso`;
+function viewLembretes(){
+  const l=lembretesHoje(),feitos=l.filter(x=>x.situacao==="avisado").length;
+  const acao=x=>{const link=`https://wa.me/${x.tel}?text=${encodeURIComponent(textoLembrete(x))}`;
+    if(x.situacao==="avisado")return `<span class="pill ok">Avisado</span> <span class="muted">${esc(x.aviso.por||"")} ${new Date(x.aviso.quando).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span> <a class="btn sm" href="${link}" target="_blank" rel="noopener">Abrir de novo</a>`;
+    if(x.situacao==="recusa")return '<span class="pill">Não quer receber</span>';
+    if(x.situacao==="semtel")return '<span class="pill warn">Sem celular</span>';
+    return `<a class="btn sm pri" data-act="avisar" data-id="${x.id}" href="${link}" target="_blank" rel="noopener">Abrir conversa</a>`};
+  return `<p class="muted" style="margin-top:0">O botão abre a conversa no seu WhatsApp (celular ou WhatsApp Web) com a mensagem pronta: é só conferir e enviar. O texto é o de Configurações → Mensagem de cobrança. <b>${feitos} de ${l.length}</b> já avisados hoje.</p>
+  <section class="panel">${l.length?`<div class="tbl"><table><thead><tr><th>Cliente</th><th>Vencimento</th><th>Telefone</th><th class="num">Valor</th><th></th></tr></thead><tbody>${l.map(x=>`<tr><td><b>${esc(x.cl.nome)}</b>${ex(x.c)}</td><td>${fdate(x.p.venc)} <span class="muted">${quandoVence(x.falta)}</span></td><td>${esc(x.cl.telefone||"—")}</td><td class="num">${money(x.e.devido)}</td><td><div class="row">${acao(x)}</div></td></tr>`).join("")}</tbody></table></div>`:`<div class="empty"><b>Ninguém para avisar hoje</b>Aparecem aqui os vencimentos de ${diasLemb().map(quandoVence).join(" e ")}.</div>`}</section>`;
+}
 VIEWS.cobrancas=()=>{
   const t=today(),ab=abertas();
+  const abas=tabs("cobTab",{lembretes:"Lembretes de hoje",hoje:"Vencem hoje",semana:"Próximos 7 dias",mes:"Restante do mês",atrasadas:"Atrasadas"});
+  if(ui.cobTab==="lembretes")return `<div class="toolbar"><div class="tabs">${abas}</div></div>${viewLembretes()}`;
   const f={hoje:x=>x.p.venc===t,semana:x=>x.p.venc>=t&&x.p.venc<=addDays(t,7),mes:x=>x.p.venc>=t&&x.p.venc.slice(0,7)===t.slice(0,7),atrasadas:x=>x.e.atraso>0};
   const l=ab.filter(f[ui.cobTab]).sort((a,b)=>a.p.venc.localeCompare(b.p.venc));
   const tot=l.reduce((a,x)=>a+x.e.devido,0);
-  return `<div class="toolbar"><div class="tabs">${tabs("cobTab",{hoje:"Vencem hoje",semana:"Próximos 7 dias",mes:"Restante do mês",atrasadas:"Atrasadas"})}</div><span class="muted" style="margin-left:auto">${l.length} parcelas · <b>${money(tot)}</b></span></div>
+  return `<div class="toolbar"><div class="tabs">${abas}</div><span class="muted" style="margin-left:auto">${l.length} parcelas · <b>${money(tot)}</b></span></div>
   <section class="panel">${l.length?`<div class="tbl"><table><thead><tr><th>Vencimento</th><th>Cliente</th><th>Telefone</th><th class="num">Parcela</th><th class="num">Valor a cobrar</th><th></th></tr></thead><tbody>${l.map(x=>{const cl=cli(x.c.clienteId);return `<tr><td>${fdate(x.p.venc)}${x.e.atraso?` <span class="pill bad">${x.e.atraso}d</span>`:""}</td><td><b>${esc(cl.nome)}</b>${ex(x.c)}</td><td>${esc(cl.telefone||"—")}</td><td class="num">${parcLbl(x)}</td><td class="num">${money(x.e.devido)}</td><td><div class="row"><button class="sm" data-act="cobrar" data-id="${x.c.id}" data-n="${x.p.n}">Mensagem</button><button class="sm pri" data-act="pagar" data-id="${x.c.id}" data-n="${x.p.n}">Receber</button></div></td></tr>`}).join("")}</tbody></table></div>`:`<div class="empty"><b>Nada para cobrar neste filtro</b>Troque a aba para ver outros vencimentos.</div>`}</section>`;
 };
 VIEWS.caixa=()=>{
@@ -666,6 +694,7 @@ document.addEventListener("click",async e=>{
     case"novoContrato":formContrato(a.dataset.cli);break;
     case"pagar":isSaldo(S.contratos.find(x=>x.id===id))?formPagarSaldo(id):formPagar(id,n);break;
     case"cobrar":mensagem(id,n);break;
+    case"avisar":{const x=lembretesHoje().find(y=>y.id===id);if(x&&!x.aviso)put("avisos",{id,quando:new Date().toISOString(),por:window.__ccUsuario||"",contratoId:x.c.id,clienteId:x.c.clienteId,venc:x.p.venc,falta:x.falta}).catch(()=>{});break} // o link abre o WhatsApp normalmente
     case"estornar":estornar(id,n);break;
     case"estornarSaldo":estornarSaldo(id);break;
     case"renegociar":formRenegociar(id);break;

@@ -69,6 +69,7 @@
   pronto = (async () => {
     eu = await api("GET", "/api/eu");
     if (eu.trocarSenha) { location.href = "/trocar-senha"; return; }
+    window.__ccUsuario = eu.nome; // a tela grava quem avisou cada cliente nos lembretes
     // Operador não vê o que só o administrador pode fazer (o servidor recusa de qualquer jeito).
     if (eu.papel !== "admin") {
       const s = document.createElement("style");

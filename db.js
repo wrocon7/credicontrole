@@ -3,7 +3,8 @@
 // crescente, e a tela pede só o que mudou desde a última versão que viu.
 import pg from "pg";
 
-export const COLECOES = new Set(["clientes", "contratos", "transacoes", "config"]);
+// avisos = lembretes de vencimento mandados à mão pela tela (quem avisou e quando)
+export const COLECOES = new Set(["clientes", "contratos", "transacoes", "config", "avisos"]);
 
 // Com DATABASE_URL usa o PostgreSQL de verdade. Sem ela, um Postgres embutido (PGlite) que grava na pasta
 // PGLITE_DIR (padrão ./dados; ":memory:" para não gravar) — bom para testar ou para um servidor pequeno com disco.

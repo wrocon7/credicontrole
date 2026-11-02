@@ -28,22 +28,25 @@
 <main class="page">
   <p><a href="/" style="color:var(--accent)">← Voltar ao sistema</a></p>
   <h1>Lembretes no WhatsApp</h1>
-  <p class="muted" style="margin-top:0">Todo dia o sistema avisa os clientes dos vencimentos, pela mensagem modelo aprovada pela Meta. Cada aviso sai uma vez só.</p>
+  <p class="muted" style="margin-top:0">Há dois jeitos de avisar os clientes dos vencimentos:</p>
+  <ul class="muted" style="margin-top:-6px">
+    <li><b>Pela equipe (sempre disponível):</b> em Cobranças → <i>Lembretes de hoje</i>, cada cliente tem o botão "Abrir conversa", que abre o WhatsApp de quem está usando (celular ou WhatsApp Web) com a mensagem pronta. A lista mostra quem já foi avisado e por quem.</li>
+    <li><b>Automático:</b> o servidor manda sozinho pela API oficial da Meta, com a mensagem modelo aprovada. Precisa de um número ligado à API (veja o guia). Cada aviso sai uma vez só.</li>
+  </ul>
   <div id="erro" class="erro" hidden></div>
   <div class="estado">
     <div class="card"><span class="muted">WhatsApp</span><b id="eWhats">…</b><span class="muted" id="eModelo"></span></div>
-    <div class="card"><span class="muted">Envio automático</span><b id="eAtivo">…</b><span class="muted" id="eDias"></span></div>
-    <div class="card"><span class="muted">Agendamento diário</span><b id="eCron">…</b><span class="muted">tarefa que chama o servidor todo dia</span></div>
+    <div class="card"><span class="muted">Envio automático</span><b id="eAtivo">…</b><span class="muted" id="eDias"></span></div>    <div class="card"><span class="muted">Agendamento diário</span><b id="eCron">…</b><span class="muted">tarefa que chama o servidor todo dia</span></div>
   </div>
 
   <section class="card"><h2>Configuração</h2>
     <form id="f" class="form">
-      <label class="check"><input type="checkbox" name="ativo"> <span>Enviar os lembretes automaticamente todos os dias</span></label>
+      <label class="check"><input type="checkbox" name="ativo"> <span>Enviar automaticamente todos os dias pela API oficial (deixe desmarcado para a equipe avisar pela lista de Cobranças)</span></label>
       <div class="linha">
         <label class="f">Quando avisar (dias antes do vencimento, separados por vírgula)<input name="dias" placeholder="1, 0" inputmode="numeric"></label>
         <button class="pri" type="submit">Salvar</button>
       </div>
-      <p class="muted" style="margin:0">1 = um dia antes, 0 = no dia, −3 = três dias depois do vencimento (cobrança de atraso). Clientes marcados como "não quer lembretes" nunca recebem.</p>
+      <p class="muted" style="margin:0">Vale para os dois jeitos. 1 = um dia antes, 0 = no dia, −3 = três dias depois do vencimento (cobrança de atraso). Clientes marcados como "não quer lembretes" nunca recebem.</p>
     </form>
   </section>
 
@@ -75,7 +78,7 @@ async function carrega() {
   const sn = (ok, a, b) => `<span class="${ok ? "sim" : "nao"}">${ok ? a : b}</span>`;
   document.getElementById("eWhats").innerHTML = sn(j.whatsapp.configurado, "Configurado", "Não configurado");
   document.getElementById("eModelo").textContent = j.whatsapp.modelo ? `modelo "${j.whatsapp.modelo}" (${j.whatsapp.idioma})` : "faltam as variáveis WHATSAPP_* no servidor";
-  document.getElementById("eAtivo").innerHTML = sn(j.conf.ativo, "Ligado", "Desligado");
+  document.getElementById("eAtivo").innerHTML = j.conf.ativo ? '<span class="sim">Ligado</span>' : 'Desligado <span class="muted" style="font-size:13px;font-weight:400">· a equipe avisa pela lista</span>';
   document.getElementById("eDias").textContent = "avisa com " + j.conf.dias.map(d => d > 0 ? `${d} dia${d > 1 ? "s" : ""} antes` : d === 0 ? "no dia" : `${-d} dia${d < -1 ? "s" : ""} de atraso`).join(", ");
   document.getElementById("eCron").innerHTML = sn(j.agendamento, "Configurado", "Falta o CRON_TOKEN");
   document.getElementById("hoje").textContent = fd(j.hoje);

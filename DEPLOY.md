@@ -86,6 +86,15 @@ a pasta com o app parado.
 
 ## Lembretes de vencimento no WhatsApp
 
+**Sem configurar nada:** em **Cobranças → Lembretes de hoje** aparecem os clientes a avisar no dia (por padrão,
+quem vence amanhã e hoje). O botão **"Abrir conversa"** abre o WhatsApp de quem está usando, no celular ou no
+WhatsApp Web, com a mensagem pronta (o texto de Configurações → Mensagem de cobrança). A lista marca quem já
+foi avisado, por quem e a que horas, para duas pessoas não mandarem o mesmo aviso. O menu mostra quantos faltam.
+
+**Automático (opcional):** o servidor manda sozinho. Atenção: um número ligado à API oficial da Meta, em geral,
+deixa de funcionar no aplicativo do WhatsApp e no WhatsApp Web, e as respostas dos clientes passam a chegar só pela
+API. Por isso vale usar um número separado só para os avisos, ou ficar com a lista acima.
+
 Todo dia, às 9h, o sistema avisa os clientes dos vencimentos (por padrão, um dia antes e no dia) pela **API oficial
 do WhatsApp (Meta)**. Cada aviso sai uma vez só, e quem não quer receber fica de fora. A tela é **menu → Lembretes
 no WhatsApp** (só administrador): mostra o que sai hoje e o histórico, e tem um botão para enviar na hora.

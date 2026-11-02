@@ -112,6 +112,7 @@ try {
   confere("operador não cancela contrato", (await chama("PATCH", "/api/doc/contratos/k1", { cancelado: true }, opc)).status === 403);
   confere("operador não exclui contrato", (await chama("DELETE", "/api/doc/contratos/k1", null, opc)).status === 403);
   await chama("PUT", "/api/doc/clientes/p1", { nome: "Pré Teste", status: "pre" }, opc);
+  confere("operador marca cliente como avisado (lembrete manual)", (await chama("PUT", "/api/doc/avisos/k1_saldo_2026-11-03_1", { quando: new Date().toISOString(), por: "Operador Teste" }, opc)).status === 200);
   confere("operador recusa (exclui) pré-cadastro", (await chama("DELETE", "/api/doc/clientes/p1", null, opc)).status === 200);
   confere("administrador exclui contrato", (await chama("DELETE", "/api/doc/contratos/k1", null, adm)).status === 200);
 
