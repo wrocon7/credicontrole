@@ -25,10 +25,10 @@ app.disable("x-powered-by");
 app.set("trust proxy", 1);
 
 // Cabeçalhos de segurança. Scripts só do próprio servidor ou com o nonce desta resposta; dados só para cá
-// (e para o ViaCEP, que preenche o endereço no pré-cadastro).
+// (e para o ViaCEP e a BrasilAPI, que preenchem o endereço pelo CEP no pré-cadastro).
 const csp = nonce => [
   "default-src 'self'", `script-src 'self' 'nonce-${nonce}'`, "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src https://fonts.gstatic.com", "img-src 'self' data:", "connect-src 'self' https://viacep.com.br",
+  "font-src https://fonts.gstatic.com", "img-src 'self' data:", "connect-src 'self' https://viacep.com.br https://brasilapi.com.br",
   "frame-ancestors 'none'", "base-uri 'none'", "form-action 'self'", "object-src 'none'",
 ].join("; ");
 app.use((req, res, next) => {

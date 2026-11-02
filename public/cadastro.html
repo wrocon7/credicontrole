@@ -30,7 +30,7 @@
     </div></section>
 
     <section class="card"><h2>Endereço</h2><div class="form">
-      <label class="f s2">CEP<input name="cep" inputmode="numeric" autocomplete="postal-code" placeholder="00000-000"></label>
+      <label class="f s2">CEP<input name="cep" inputmode="numeric" autocomplete="postal-code" placeholder="00000-000"><span id="cepAviso" class="muted" style="font-weight:400" hidden>CEP não encontrado. Preencha o endereço.</span></label>
       <label class="f s4">Rua<input name="logradouro" autocomplete="address-line1"></label>
       <label class="f s2">Número<input name="numero"></label>
       <label class="f s4">Bairro<input name="bairro"></label>
@@ -63,16 +63,26 @@ fetch("/api/publico/info").then(r => r.json()).then(i => {
   document.getElementById("aviso").textContent = `${i.nome ? `Autorizo ${i.nome} a usar` : "Autorizo o uso de"} os meus dados para analisar o pedido de crédito. ${i.aviso}`;
 }).catch(() => {});
 
-// Endereço pelo CEP (ViaCEP)
-f.cep.addEventListener("blur", async () => {
-  const cep = f.cep.value.replace(/\D/g, "");
-  if (cep.length !== 8) return;
+// Endereço pelo CEP: ViaCEP (base dos Correios) e, se não achar ou estiver fora do ar, a BrasilAPI, que consulta outras fontes.
+async function buscaCep(cep) {
   try {
     const j = await (await fetch(`https://viacep.com.br/ws/${cep}/json/`)).json();
-    if (j.erro) return;
-    for (const [campo, v] of [["logradouro", j.logradouro], ["bairro", j.bairro], ["cidade", j.localidade], ["uf", j.uf]]) if (v && !f[campo].value) f[campo].value = v;
-    f.numero.focus();
+    if (!j.erro) return { logradouro: j.logradouro, bairro: j.bairro, cidade: j.localidade, uf: j.uf };
   } catch (_) {}
+  try {
+    const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`);
+    if (r.ok) { const j = await r.json(); return { logradouro: j.street, bairro: j.neighborhood, cidade: j.city, uf: j.state }; }
+  } catch (_) {}
+  return null;
+}
+f.cep.addEventListener("blur", async () => {
+  const cep = f.cep.value.replace(/\D/g, ""), aviso = document.getElementById("cepAviso");
+  aviso.hidden = true;
+  if (cep.length !== 8) return;
+  const e = await buscaCep(cep);
+  if (!e) { aviso.hidden = false; return; }
+  for (const campo of ["logradouro", "bairro", "cidade", "uf"]) if (e[campo] && !f[campo].value) f[campo].value = e[campo];
+  f.numero.focus();
 });
 
 f.onsubmit = async e => {
