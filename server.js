@@ -296,7 +296,7 @@ await db.migrar();
 // Cadastros antigos com nome ou endereço em minúsculas (ex.: "HUGO demuner") passam para maiúsculas, igual aos novos.
 for (const { id, dados } of (await db.todosDocs()).filter(d => d.colecao === "clientes")) {
   const novo = { ...dados };
-  for (const k of ["nome", "rg", "empresa", "enderecoTrabalho", "endereco", "logradouro", "numero", "bairro", "cidade", "uf"]) if (typeof novo[k] === "string") novo[k] = maiusculas(novo[k]);
+  for (const k of ["nome", "rg", "empresa", "enderecoTrabalho", "endereco", "logradouro", "numero", "bairro", "cidade", "uf", "indicacao", "referencias"]) if (typeof novo[k] === "string") novo[k] = maiusculas(novo[k]);
   if (JSON.stringify(novo) === JSON.stringify(dados)) continue;
   await db.gravar("clientes", id, novo);
   await db.auditar({ acao: "padronizar_maiusculas", colecao: "clientes", id, antes: { nome: dados.nome }, depois: { nome: novo.nome } });

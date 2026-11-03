@@ -524,18 +524,19 @@ function formCliente(c,pre){
     <label class="f">E-mail<input name="email" type="email" value="${esc(c.email)}"></label>
     <label class="f full">Endereço residencial<input name="endereco" style="text-transform:uppercase" value="${esc(c.endereco)}"></label>
     <label class="f">Nome da empresa<input name="empresa" style="text-transform:uppercase" value="${esc(c.empresa)}"></label>
-    <label class="f">Indicado por<input name="indicacao" value="${esc(c.indicacao)}"></label>
+    <label class="f">Indicado por<input name="indicacao" style="text-transform:uppercase" value="${esc(c.indicacao)}"></label>
     <label class="f full">Endereço do local de trabalho<input name="enderecoTrabalho" style="text-transform:uppercase" value="${esc(c.enderecoTrabalho)}"></label>
     <label class="f">Tempo de carteira<input name="tempoRegistro" value="${esc(c.tempoRegistro)}"></label>
     <label class="f">Renda mensal (R$)<input name="renda" type="number" step="0.01" min="0" value="${esc(c.renda)}"></label>
-    <label class="f full">Contatos de referência<textarea name="referencias" style="min-height:56px" placeholder="Nome (parentesco) — telefone, um por linha">${esc(c.referencias)}</textarea></label>
+    <label class="f full">Contatos de referência<textarea name="referencias" style="min-height:56px;text-transform:uppercase" placeholder="Nome (parentesco) — telefone, um por linha">${esc(c.referencias)}</textarea></label>
     <label class="f full">Observações<textarea name="obs">${esc(c.obs)}</textarea></label>
     <label class="f full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500;color:var(--fg)"><input type="checkbox" name="semLembrete" style="width:auto" ${c.semLembrete?"checked":""}>Não mandar lembretes de vencimento pelo WhatsApp</label>
     <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Salvar</button></div></form>`);
   $("#fCli").onsubmit=async e=>{e.preventDefault();const d=formData(e.target);
     const o={...c,...d,id:c.id||uid("cl"),status:c.status||(pre?"pre":"ativo"),criadoEm:c.criadoEm||new Date().toISOString()};
     o.renda=o.renda?+o.renda:null;
-    for(const k of ["nome","rg","endereco","empresa","enderecoTrabalho"])if(typeof o[k]==="string")o[k]=o[k].trim().replace(/\s+/g," ").toLocaleUpperCase("pt-BR"); // padrão do contrato
+    for(const k of ["nome","rg","endereco","empresa","enderecoTrabalho","indicacao"])if(typeof o[k]==="string")o[k]=o[k].trim().replace(/\s+/g," ").toLocaleUpperCase("pt-BR"); // padrão do contrato
+    if(typeof o.referencias==="string")o.referencias=o.referencias.trim().toLocaleUpperCase("pt-BR"); // mantém uma referência por linha
     o.semLembrete=d.semLembrete==="on"; // caixa desmarcada não vem no formulário
     try{await put("clientes",o);closeTop();toast(c.id?"Cliente atualizado":"Cliente cadastrado");if($(".drawer"))verCliente(o.id)}catch(_){}};
 }
