@@ -95,7 +95,9 @@ try {
   const manual = (await chama("POST", "/api/lembretes/enviar", null, adm)).json || {};
   confere("'Enviar agora' funciona mesmo desligado", manual.desligado === undefined && manual.falhas === 1);
 
-  const pre = { nome: "Eva Rocha Teste", cpf: "529.982.247-25", telefone: "(27) 99999-5555", aceite: true };
+  const pre = { nome: "Eva Rocha Teste", cpf: "529.982.247-25", rg: "7654321 SPTC/ES", telefone: "(27) 99999-5555", aceite: true,
+    cep: "29160161", logradouro: "Rua A", numero: "1", bairro: "Centro", cidade: "Serra", uf: "ES",
+    empresa: "Loja X", enderecoTrabalho: "Rua B, 2, Centro, Serra", ref1Nome: "Ana", ref1Parentesco: "Mãe", ref1Telefone: "27988887777" };
   await chama("POST", "/api/publico/precadastro", { ...pre, aceitaWhatsapp: true });
   await chama("POST", "/api/publico/precadastro", pre);
   const pres = ((await chama("GET", "/api/dados", null, adm)).json?.docs || []).filter(d => d.dados.origem === "link").map(d => d.dados.semLembrete);

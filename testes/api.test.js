@@ -77,8 +77,12 @@ try {
 
   // pré-cadastro público
   confere("info pública tem aviso", !!(await chama("GET", "/api/publico/info")).json?.aviso);
-  const pre = { nome: "Maria da Silva", cpf: "529.982.247-25", telefone: "(27) 99999-0000", aceite: true, cidade: "Serra", uf: "es", ref1Nome: "José", ref1Parentesco: "pai", ref1Telefone: "(27) 98888-0000", renda: "2.500,00", franquia: "GC12" };
+  const pre = { nome: "Maria  da silva", cpf: "529.982.247-25", rg: "1234567 sptc/es", telefone: "27999990000", aceite: true,
+    cep: "29160-161", logradouro: "Av. João Palácio", numero: "10", bairro: "Eurico Salles", cidade: "Serra", uf: "es",
+    empresa: "Mercado Bom Preço", enderecoTrabalho: "Rua das Flores, 20, Centro, Serra", ref1Nome: "José", ref1Parentesco: "pai", ref1Telefone: "(27) 98888-0000", renda: "2.500,00", franquia: "GC12" };
   confere("CPF inválido é recusado", (await chama("POST", "/api/publico/precadastro", { ...pre, cpf: "111.111.111-11" })).status === 400);
+  const so3 = await chama("POST", "/api/publico/precadastro", { nome: "Hugo Demuner", cpf: pre.cpf, telefone: pre.telefone, aceite: true });
+  confere("só nome, CPF e telefone não passa: lista o que falta", so3.status === 400 && ["RG", "CEP", "nome da empresa", "endereço do local de trabalho", "telefone do contato"].every(c => so3.json?.faltam?.includes(c)), JSON.stringify(so3.json));
   confere("sem aceite é recusado", (await chama("POST", "/api/publico/precadastro", { ...pre, aceite: false })).status === 400);
   confere("pré-cadastro válido é aceito", (await chama("POST", "/api/publico/precadastro", pre)).status === 200);
   confere("robô (campo escondido) recebe ok mas não grava", (await chama("POST", "/api/publico/precadastro", { ...pre, site: "x" })).status === 200);
@@ -86,7 +90,10 @@ try {
   const pres = (await chama("GET", "/api/dados", null, adm)).json.docs.filter(d => d.colecao === "clientes" && d.dados.origem === "link");
   const p0 = pres.find(d => !d.dados.obs)?.dados || {};
   confere("pré-cadastro gravado com status, origem, franquia, UF e renda", pres.length === 2 && p0.status === "pre" && p0.franquia === "GC12" && p0.uf === "ES" && p0.renda === 2500);
-  confere("referência formatada", p0.referencias === "José (pai) — (27) 98888-0000");
+  confere("nome, RG, empresa e endereços em maiúsculas", p0.nome === "MARIA DA SILVA" && p0.rg === "1234567 SPTC/ES" && p0.empresa === "MERCADO BOM PREÇO"
+    && p0.enderecoTrabalho === "RUA DAS FLORES, 20, CENTRO, SERRA" && p0.endereco === "AV. JOÃO PALÁCIO, 10 · EURICO SALLES · SERRA/ES · 29160-161", JSON.stringify(p0));
+  confere("telefone formatado e e-mail/valor pretendido fora", p0.telefone === "(27) 99999-0000" && !("email" in p0) && !("valorPretendido" in p0));
+  confere("referência formatada", p0.referencias === "JOSÉ (PAI) — (27) 98888-0000", p0.referencias);
   confere("CPF repetido fica com aviso", pres.some(d => /^Atenção/.test(d.dados.obs)));
   for (let i = 0; i < 3; i++) await chama("POST", "/api/publico/precadastro", pre);
   confere("limite de 5 envios por hora por aparelho", (await chama("POST", "/api/publico/precadastro", pre)).status === 429);

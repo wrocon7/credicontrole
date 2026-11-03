@@ -242,27 +242,41 @@ app.get("/api/publico/info", assincrono(async (req, res) => {
   res.json({ nome: c.empresaPublica || c.nome || "", aviso: c.avisoPrivacidade || AVISO_PADRAO });
 }));
 const envios = limitador(5, 3600e3);
+const maiusculas = s => String(s ?? "").toLocaleUpperCase("pt-BR");
+// "27981732823" → "(27) 98173-2823"; o que não for celular/fixo com DDD fica como veio
+const telefoneBR = v => {
+  const d = String(v || "").replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "");
+  return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d.length === 10 ? `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}` : String(v || "").trim();
+};
 app.post("/api/publico/precadastro", assincrono(async (req, res) => {
   const b = req.body || {};
   if (b.site) return res.json({ ok: true }); // campo escondido: só robô preenche
-  const t = (v, n = 120) => String(v ?? "").trim().slice(0, n);
+  const t = (v, n = 120) => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, n);
+  const M = (v, n) => maiusculas(t(v, n)); // nomes e endereços ficam em maiúsculas, como vão para o contrato
   const num = v => { const x = parseFloat(String(v ?? "").replace(/\./g, "").replace(",", ".")); return x > 0 ? Math.round(x * 100) / 100 : null; };
-  const nome = t(b.nome), cpf = t(b.cpf, 20).replace(/\D/g, ""), telefone = t(b.telefone, 30);
-  if (nome.length < 5 || !nome.includes(" ")) return res.status(400).json({ erro: "Informe o nome completo." });
-  if (!cpfValido(cpf)) return res.status(400).json({ erro: "CPF inválido." });
-  if (telefone.replace(/\D/g, "").length < 10) return res.status(400).json({ erro: "Informe um telefone com DDD." });
+  const d = { nome: M(b.nome), cpf: t(b.cpf, 20).replace(/\D/g, ""), rg: M(b.rg, 30), telefone: t(b.telefone, 30),
+    cep: t(b.cep, 9).replace(/\D/g, ""), logradouro: M(b.logradouro), numero: M(b.numero, 20), bairro: M(b.bairro, 80), cidade: M(b.cidade, 80), uf: M(b.uf, 2),
+    empresa: M(b.empresa), enderecoTrabalho: M(b.enderecoTrabalho, 200), ref1Nome: M(b.ref1Nome, 80), ref1Parentesco: M(b.ref1Parentesco, 40), ref1Telefone: t(b.ref1Telefone, 30) };
+  const digitos = v => v.replace(/\D/g, "").length;
+  const faltam = [
+    [d.nome.length >= 5 && d.nome.includes(" "), "nome completo"], [cpfValido(d.cpf), "CPF válido"], [d.rg.replace(/[^0-9A-Z]/g, "").length >= 5, "RG"],
+    [digitos(d.telefone) >= 10, "telefone com DDD"], [d.cep.length === 8, "CEP"], [d.logradouro, "rua"], [d.numero, "número"], [d.bairro, "bairro"],
+    [d.cidade, "cidade"], [/^[A-Z]{2}$/.test(d.uf), "UF"], [d.empresa, "nome da empresa"], [d.enderecoTrabalho.length >= 8, "endereço do local de trabalho"],
+    [d.ref1Nome, "nome do contato de referência"], [d.ref1Parentesco, "parentesco do contato"], [digitos(d.ref1Telefone) >= 10, "telefone do contato"],
+  ].filter(([ok]) => !ok).map(([, rotulo]) => rotulo);
+  if (faltam.length) return res.status(400).json({ erro: `Preencha: ${faltam.join(", ")}.`, faltam });
   if (b.aceite !== true) return res.status(400).json({ erro: "É preciso concordar com o uso dos dados." });
   if (!envios(req.ip)) return res.status(429).json({ erro: "Muitos envios deste aparelho. Tente de novo mais tarde." });
 
-  const uf = t(b.uf, 2).toUpperCase(), cidade = t(b.cidade, 80);
-  const endereco = [[t(b.logradouro), t(b.numero, 20)].filter(Boolean).join(", "), t(b.bairro, 80), cidade && (cidade + (uf ? "/" + uf : "")), t(b.cep, 9)].filter(Boolean).join(" · ");
-  const referencias = [1, 2].map(i => [t(b[`ref${i}Nome`], 80), t(b[`ref${i}Parentesco`], 40), t(b[`ref${i}Telefone`], 30)])
-    .filter(([n, , f]) => n || f).map(([n, p, f]) => `${n}${p ? ` (${p})` : ""}${f ? ` — ${f}` : ""}`).join("\n");
+  const cep = d.cep.replace(/(\d{5})(\d{3})/, "$1-$2"), nome = d.nome, cpf = d.cpf;
+  const endereco = [`${d.logradouro}, ${d.numero}`, d.bairro, `${d.cidade}/${d.uf}`, cep].join(" · ");
+  const referencias = [[d.ref1Nome, d.ref1Parentesco, d.ref1Telefone], [M(b.ref2Nome, 80), M(b.ref2Parentesco, 40), t(b.ref2Telefone, 30)]]
+    .filter(([n, , f]) => n || f).map(([n, p, f]) => `${n}${p ? ` (${p})` : ""}${f ? ` — ${telefoneBR(f)}` : ""}`).join("\n");
   const ja = await db.clientePorCpf(cpf), agora = new Date().toISOString(), id = "cl" + Date.now().toString(36) + crypto.randomBytes(3).toString("hex");
   await db.gravar("clientes", id, {
-    nome, cpf: cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4"), telefone, email: t(b.email),
-    endereco, cep: t(b.cep, 9), logradouro: t(b.logradouro), numero: t(b.numero, 20), bairro: t(b.bairro, 80), cidade, uf,
-    empresa: t(b.empresa), tempoRegistro: t(b.tempoRegistro, 40), renda: num(b.renda), valorPretendido: num(b.valorPretendido),
+    nome, cpf: cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4"), rg: d.rg, telefone: telefoneBR(d.telefone),
+    endereco, cep, logradouro: d.logradouro, numero: d.numero, bairro: d.bairro, cidade: d.cidade, uf: d.uf,
+    empresa: d.empresa, enderecoTrabalho: d.enderecoTrabalho, tempoRegistro: t(b.tempoRegistro, 40), renda: num(b.renda),
     referencias, franquia: t(b.franquia, 30), origem: "link", semLembrete: b.aceitaWhatsapp !== true,
     obs: ja ? `Atenção: este CPF já está cadastrado (${ja.nome}).` : "",
     status: "pre", criadoEm: agora, aceitePrivacidadeEm: agora,
@@ -279,6 +293,15 @@ app.use((e, req, res, next) => {
 });
 
 await db.migrar();
+// Cadastros antigos com nome ou endereço em minúsculas (ex.: "HUGO demuner") passam para maiúsculas, igual aos novos.
+for (const { id, dados } of (await db.todosDocs()).filter(d => d.colecao === "clientes")) {
+  const novo = { ...dados };
+  for (const k of ["nome", "rg", "empresa", "enderecoTrabalho", "endereco", "logradouro", "numero", "bairro", "cidade", "uf"]) if (typeof novo[k] === "string") novo[k] = maiusculas(novo[k]);
+  if (JSON.stringify(novo) === JSON.stringify(dados)) continue;
+  await db.gravar("clientes", id, novo);
+  await db.auditar({ acao: "padronizar_maiusculas", colecao: "clientes", id, antes: { nome: dados.nome }, depois: { nome: novo.nome } });
+  console.log("Cadastro padronizado em maiúsculas:", id);
+}
 if ((await db.usuarios.contar()) === 0) {
   const email = process.env.ADMIN_EMAIL, senha = process.env.ADMIN_SENHA;
   if (email && senha && senha.length >= 8) {

@@ -6,45 +6,49 @@
 <title>Pré-cadastro</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Figtree:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/assets/base.css">
+<style>
+.mai{text-transform:uppercase}
+.opc{font-weight:400;color:var(--muted)}
+</style>
 </head>
 <body>
 <main class="page">
   <h1 id="titulo">Pré-cadastro</h1>
-  <p class="muted" style="margin-top:0">Preencha seus dados para a análise do pedido. Entraremos em contato pelo telefone informado.</p>
+  <p class="muted" style="margin-top:0">Preencha seus dados para a análise do pedido. Entraremos em contato pelo telefone informado. Todos os campos são obrigatórios, menos os marcados como opcionais.</p>
 
   <div id="feito" class="ok" hidden>Recebemos o seu pré-cadastro. Em breve entraremos em contato pelo telefone informado.</div>
 
   <form id="f" autocomplete="on">
-    <section class="card"><h2>Seus dados</h2><div class="form">
-      <label class="f">Nome completo<input name="nome" required autocomplete="name"></label>
-      <label class="f s3">CPF<input name="cpf" required inputmode="numeric" placeholder="000.000.000-00"></label>
-      <label class="f s3">Telefone (WhatsApp)<input name="telefone" required inputmode="tel" autocomplete="tel" placeholder="(27) 99999-9999"></label>
-      <label class="f">E-mail<input name="email" type="email" autocomplete="email"></label>
+    <section class="card"><h2>Dados pessoais</h2><div class="form">
+      <label class="f">Nome completo<input name="nome" class="mai" required minlength="5" autocomplete="name"></label>
+      <label class="f s3">CPF<input name="cpf" required inputmode="numeric" placeholder="000.000.000-00" maxlength="14"></label>
+      <label class="f s3">RG<input name="rg" class="mai" required placeholder="Número e órgão, ex.: 1234567 SPTC/ES"></label>
+      <label class="f">Telefone (WhatsApp)<input name="telefone" required inputmode="tel" autocomplete="tel" placeholder="(27) 99999-9999" maxlength="15"></label>
     </div></section>
 
-    <section class="card"><h2>Trabalho e valor</h2><div class="form">
-      <label class="f s4">Empresa onde trabalha<input name="empresa"></label>
-      <label class="f s2">Tempo de carteira<input name="tempoRegistro" placeholder="Ex.: 8 meses"></label>
-      <label class="f s3">Renda mensal (R$)<input name="renda" inputmode="decimal"></label>
-      <label class="f s3">Valor que precisa (R$)<input name="valorPretendido" inputmode="decimal"></label>
+    <section class="card"><h2>Endereço residencial</h2><div class="form">
+      <label class="f s2">CEP<input name="cep" required inputmode="numeric" autocomplete="postal-code" placeholder="00000-000" maxlength="9"><span id="cepAviso" class="muted" style="font-weight:400" hidden>CEP não encontrado. Preencha o endereço.</span></label>
+      <label class="f s4">Rua<input name="logradouro" class="mai" required autocomplete="address-line1"></label>
+      <label class="f s2">Número<input name="numero" class="mai" required></label>
+      <label class="f s4">Bairro<input name="bairro" class="mai" required></label>
+      <label class="f s4">Cidade<input name="cidade" class="mai" required autocomplete="address-level2"></label>
+      <label class="f s2">UF<input name="uf" class="mai" required maxlength="2" minlength="2" autocomplete="address-level1"></label>
     </div></section>
 
-    <section class="card"><h2>Endereço</h2><div class="form">
-      <label class="f s2">CEP<input name="cep" inputmode="numeric" autocomplete="postal-code" placeholder="00000-000"><span id="cepAviso" class="muted" style="font-weight:400" hidden>CEP não encontrado. Preencha o endereço.</span></label>
-      <label class="f s4">Rua<input name="logradouro" autocomplete="address-line1"></label>
-      <label class="f s2">Número<input name="numero"></label>
-      <label class="f s4">Bairro<input name="bairro"></label>
-      <label class="f s4">Cidade<input name="cidade" autocomplete="address-level2"></label>
-      <label class="f s2">UF<input name="uf" maxlength="2" autocomplete="address-level1"></label>
+    <section class="card"><h2>Local de trabalho</h2><div class="form">
+      <label class="f">Nome da empresa<input name="empresa" class="mai" required></label>
+      <label class="f">Endereço do local de trabalho<input name="enderecoTrabalho" class="mai" required minlength="8" placeholder="Rua, número, bairro e cidade"></label>
+      <label class="f s3">Tempo de carteira <span class="opc">(opcional)</span><input name="tempoRegistro" placeholder="Ex.: 8 meses"></label>
+      <label class="f s3">Renda mensal (R$) <span class="opc">(opcional)</span><input name="renda" inputmode="decimal"></label>
     </div></section>
 
-    <section class="card"><h2>Contatos de referência</h2><p class="muted" style="margin-top:-6px">Duas pessoas próximas que possam confirmar seus dados.</p><div class="form">
-      <label class="f s3">Nome<input name="ref1Nome"></label>
-      <label class="f s3">Parentesco<input name="ref1Parentesco" placeholder="Ex.: mãe"></label>
-      <label class="f">Telefone<input name="ref1Telefone" inputmode="tel"></label>
-      <label class="f s3">Nome<input name="ref2Nome"></label>
-      <label class="f s3">Parentesco<input name="ref2Parentesco"></label>
-      <label class="f">Telefone<input name="ref2Telefone" inputmode="tel"></label>
+    <section class="card"><h2>Contatos de referência</h2><p class="muted" style="margin-top:-6px">Um familiar para recado, com nome, parentesco e telefone. O segundo contato é opcional.</p><div class="form">
+      <label class="f s3">Nome<input name="ref1Nome" class="mai" required></label>
+      <label class="f s3">Parentesco<input name="ref1Parentesco" class="mai" required placeholder="Ex.: mãe"></label>
+      <label class="f">Telefone<input name="ref1Telefone" required inputmode="tel" placeholder="(27) 99999-9999" maxlength="15"></label>
+      <label class="f s3">Nome <span class="opc">(opcional)</span><input name="ref2Nome" class="mai"></label>
+      <label class="f s3">Parentesco <span class="opc">(opcional)</span><input name="ref2Parentesco" class="mai"></label>
+      <label class="f">Telefone <span class="opc">(opcional)</span><input name="ref2Telefone" inputmode="tel" maxlength="15"></label>
     </div></section>
 
     <section class="card"><div class="form">
@@ -64,6 +68,16 @@ fetch("/api/publico/info").then(r => r.json()).then(i => {
   document.getElementById("aviso").textContent = `${i.nome ? `Autorizo ${i.nome} a usar` : "Autorizo o uso de"} os meus dados para analisar o pedido de crédito. ${i.aviso}`;
 }).catch(() => {});
 
+// Máscaras: CPF, telefone e CEP vão se formatando enquanto a pessoa digita.
+const so = v => v.replace(/\D/g, "");
+const MASCARA = {
+  cpf: v => so(v).slice(0, 11).replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2"),
+  tel: v => { const d = so(v).slice(0, 11); return d.length < 3 ? d : `(${d.slice(0, 2)}) ${d.length > 10 ? d.slice(2, 7) + "-" + d.slice(7) : d.length > 6 ? d.slice(2, 6) + "-" + d.slice(6) : d.slice(2)}`; },
+  cep: v => so(v).slice(0, 8).replace(/(\d{5})(\d)/, "$1-$2"),
+};
+for (const [nome, m] of [["cpf", "cpf"], ["telefone", "tel"], ["ref1Telefone", "tel"], ["ref2Telefone", "tel"], ["cep", "cep"]])
+  f.elements[nome].addEventListener("input", e => { e.target.value = MASCARA[m](e.target.value); });
+
 // Endereço pelo CEP: ViaCEP (base dos Correios) e, se não achar ou estiver fora do ar, a BrasilAPI, que consulta outras fontes.
 async function buscaCep(cep) {
   try {
@@ -77,7 +91,7 @@ async function buscaCep(cep) {
   return null;
 }
 f.cep.addEventListener("blur", async () => {
-  const cep = f.cep.value.replace(/\D/g, ""), aviso = document.getElementById("cepAviso");
+  const cep = so(f.cep.value), aviso = document.getElementById("cepAviso");
   aviso.hidden = true;
   if (cep.length !== 8) return;
   const e = await buscaCep(cep);

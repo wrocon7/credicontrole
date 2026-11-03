@@ -91,15 +91,17 @@
     const box = document.createElement("div");
     box.style.cssText = "margin-top:18px;padding:14px 10px 4px;border-top:1px solid rgba(255,255,255,.1);display:grid;gap:8px;font-size:13px";
     box.innerHTML = `<div style="color:var(--side-muted)">Conectado como<br><b style="color:#fff">${esc(eu.nome)}</b> · ${eu.papel === "admin" ? "administrador" : "operador"}</div>
-      <a href="#" id="ccLink" style="${a}">Copiar link de pré-cadastro</a>
+      <a href="#" id="ccLink" style="${a}">Copiar mensagem do pré-cadastro</a>
       ${eu.papel === "admin" ? `<a href="/usuarios" style="${a}">Usuários</a><a href="/lembretes" style="${a}">Lembretes no WhatsApp</a><a href="/auditoria" style="${a}">Auditoria</a><a href="/api/backup" download style="${a}">Baixar cópia de segurança</a>` : ""}
       <a href="/trocar-senha" style="${a}">Minha senha</a>
       <a href="#" id="ccSair" style="${a}">Sair</a>`;
     side.appendChild(box);
+    // Copia a mensagem pronta para mandar ao cliente, já com o link do formulário.
     document.getElementById("ccLink").onclick = e => {
       e.preventDefault();
       const url = location.origin + "/cadastro";
-      navigator.clipboard?.writeText(url).then(() => toast("Link copiado: " + url), () => toast(url));
+      const msg = `Enquanto seus dados são analisados, favor preencher o formulário a seguir:\n${url}\n\n⚠️ ATENÇÃO ⚠️\nEm "Contatos de referência", coloque um número para recado: o telefone de um familiar, com o nome e o grau de parentesco.`;
+      navigator.clipboard?.writeText(msg).then(() => toast("Mensagem com o link copiada. É só colar na conversa do cliente."), () => toast(url));
     };
     document.getElementById("ccSair").onclick = async e => { e.preventDefault(); await fetch("/api/logout", { method: "POST" }); location.href = "/login"; };
   }));
