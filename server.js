@@ -3,12 +3,14 @@
 import express from "express";
 import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as db from "./db.js";
 import * as lembretes from "./lembretes.js";
 import { hojeBR } from "./calculo.js";
-import { hashSenha, confereSenha, criarToken, lerToken, lerCookies, limitador, cpfValido, DURACAO_SESSAO } from "./auth.js";
+import { proibido, invalido } from "./regras.js";
+import { hashSenha, confereSenha, hashFraco, HASH_FALSO, SENHA_MAX, criarToken, lerToken, lerCookies, limitador, cpfValido, DURACAO_SESSAO } from "./auth.js";
 
 const raiz = path.dirname(fileURLToPath(import.meta.url));
 const PORTA = +process.env.PORT || 3300;
@@ -24,7 +26,29 @@ const PAGINAS = {
 
 const app = express();
 app.disable("x-powered-by");
-app.set("trust proxy", 1);
+app.set("trust proxy", /^\d+$/.test(process.env.TRUST_PROXY || "") ? +process.env.TRUST_PROXY : 1);
+
+// IP de quem acessa, usado nos limites de tentativas e na auditoria. Na Render o pedido passa pela Cloudflare e por
+// um proxy interno, e req.ip seria o endereço 10.x desse proxy, igual para todo mundo. Lá o IP verdadeiro vem no
+// cabeçalho que a Cloudflare preenche e que o visitante não consegue forjar. Em outro servidor esse cabeçalho não é
+// confiável: vale req.ip (ajuste TRUST_PROXY ao número de proxies na frente) ou defina IP_HEADER.
+const CABECALHO_IP = (process.env.IP_HEADER ?? (process.env.RENDER ? "cf-connecting-ip" : "")).toLowerCase();
+app.use((req, res, next) => {
+  const h = CABECALHO_IP ? String(req.headers[CABECALHO_IP] || "").trim() : "";
+  req.ipCliente = net.isIP(h) ? h : req.ip;
+  next();
+});
+
+// Pedidos que alteram algo só são aceitos vindos das páginas deste próprio servidor (proteção contra CSRF, além do
+// cookie SameSite). Chamadas sem navegador, como a tarefa agendada, não mandam Origin e passam.
+app.use((req, res, next) => {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
+  const origem = req.headers.origin;
+  let outroSite = req.headers["sec-fetch-site"] === "cross-site";
+  if (origem) { try { outroSite ||= new URL(origem).host !== req.get("host"); } catch { outroSite = true; } }
+  if (outroSite) return res.status(403).json({ erro: "Origem não permitida." });
+  next();
+});
 
 // Cabeçalhos de segurança. Scripts só do próprio servidor ou com o nonce desta resposta; dados só para cá
 // (e para o ViaCEP e a BrasilAPI, que preenchem o endereço pelo CEP no pré-cadastro).
@@ -38,17 +62,20 @@ app.use((req, res, next) => {
   res.set({
     "Content-Security-Policy": csp(res.locals.nonce), "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin",
     "X-Frame-Options": "DENY", "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Resource-Policy": "same-origin",
   });
   if (PRODUCAO) res.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   if (req.path.startsWith("/api/")) res.set("Cache-Control", "no-store");
+  if (req.path !== "/cadastro") res.set("X-Robots-Tag", "noindex"); // só o formulário público pode aparecer em buscadores
   next();
 });
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "500kb" }));
 
 const assincrono = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
-const pagina = (res, nome) => res.type("html").send(PAGINAS[nome].replace(/<script(?=[\s>])/g, `<script nonce="${res.locals.nonce}"`));
+// As páginas levam o nonce desta resposta, então nunca são guardadas pelo navegador.
+const pagina = (res, nome) => res.set("Cache-Control", "no-store").type("html").send(PAGINAS[nome].replace(/<script(?=[\s>])/g, `<script nonce="${res.locals.nonce}"`));
 const cookieSessao = (res, u) => res.cookie("cc_sessao", criarToken(u), { httpOnly: true, sameSite: "lax", secure: PRODUCAO, maxAge: DURACAO_SESSAO, path: "/" });
-const audita = (req, dados) => db.auditar({ usuario: req.u, ip: req.ip, ...dados }).catch(e => console.error("auditoria:", e));
+const audita = (req, dados) => db.auditar({ usuario: req.u, ip: req.ipCliente, ...dados }).catch(e => console.error("auditoria:", e));
 
 async function usuarioDe(req) {
   const t = lerToken(lerCookies(req).cc_sessao);
@@ -86,27 +113,36 @@ app.get("/saude", (req, res) => res.json({ ok: true }));
 app.get("/favicon.ico", (req, res) => res.status(204).end());
 
 /* ---------- login e senha ---------- */
-const tentativas = limitador(10, 15 * 60e3);
+// Dois limites a cada 15 minutos: 10 tentativas por aparelho + e-mail e 40 por aparelho (contra quem troca de e-mail
+// a cada tentativa, o que também encheria a auditoria).
+const tentativas = limitador(10, 15 * 60e3), tentativasIp = limitador(40, 15 * 60e3);
+const senhaValida = s => s.length >= 8 && s.length <= SENHA_MAX;
+const ERRO_SENHA = `A senha precisa ter de 8 a ${SENHA_MAX} caracteres.`;
 app.post("/api/login", assincrono(async (req, res) => {
-  const email = String(req.body?.email || "").trim(), senha = String(req.body?.senha || "");
-  if (!tentativas(req.ip + "|" + email.toLowerCase())) return res.status(429).json({ erro: "Muitas tentativas. Espere 15 minutos." });
-  const u = email && (await db.usuarios.porEmail(email));
-  if (!u || !u.ativo || !confereSenha(senha, u.senha)) {
+  const email = String(req.body?.email || "").trim().slice(0, 200), senha = String(req.body?.senha || "");
+  if (!tentativasIp(req.ipCliente) || !tentativas(req.ipCliente + "|" + email.toLowerCase())) return res.status(429).json({ erro: "Muitas tentativas. Espere 15 minutos." });
+  const u = email ? await db.usuarios.porEmail(email) : null;
+  // confere sempre, mesmo sem usuário: a resposta leva o mesmo tempo e não revela quais e-mails existem
+  const confere = await confereSenha(senha, u ? u.senha : HASH_FALSO);
+  if (!u || !u.ativo || !confere) {
     audita(req, { acao: "login_falhou", depois: { email: email.slice(0, 120) } });
     return res.status(401).json({ erro: "E-mail ou senha incorretos." });
   }
+  if (hashFraco(u.senha)) await db.usuarios.alterar(u.id, { senha: await hashSenha(senha) }); // regrava com o custo atual
   cookieSessao(res, u);
   req.u = u; audita(req, { acao: "login" });
   res.json({ ok: true, trocarSenha: u.trocar_senha });
 }));
 app.post("/api/logout", (req, res) => { res.clearCookie("cc_sessao", { path: "/" }); res.json({ ok: true }); });
 app.get("/api/eu", exige(null, true), (req, res) => res.json({ id: req.u.id, nome: req.u.nome, email: req.u.email, papel: req.u.papel, trocarSenha: req.u.trocar_senha }));
+const trocas = limitador(10, 15 * 60e3);
 app.post("/api/minha-senha", exige(null, true), assincrono(async (req, res) => {
   const atual = String(req.body?.atual || ""), nova = String(req.body?.nova || "");
-  if (!confereSenha(atual, req.u.senha)) return res.status(400).json({ erro: "A senha atual está errada." });
-  if (nova.length < 8) return res.status(400).json({ erro: "A nova senha precisa ter pelo menos 8 caracteres." });
+  if (!trocas(String(req.u.id))) return res.status(429).json({ erro: "Muitas tentativas. Espere 15 minutos." });
+  if (!(await confereSenha(atual, req.u.senha))) return res.status(400).json({ erro: "A senha atual está errada." });
+  if (!senhaValida(nova)) return res.status(400).json({ erro: ERRO_SENHA });
   if (nova === atual) return res.status(400).json({ erro: "A nova senha precisa ser diferente da atual." });
-  await db.usuarios.alterar(req.u.id, { senha: hashSenha(nova), trocar_senha: false }, true);
+  await db.usuarios.alterar(req.u.id, { senha: await hashSenha(nova), trocar_senha: false }, true);
   cookieSessao(res, await db.usuarios.porId(req.u.id)); // este aparelho continua logado; os outros caem
   audita(req, { acao: "trocou_senha" });
   res.json({ ok: true });
@@ -115,28 +151,6 @@ app.post("/api/minha-senha", exige(null, true), assincrono(async (req, res) => {
 /* ---------- dados da carteira ---------- */
 app.get("/api/dados", exige(), assincrono(async (req, res) => res.json(await db.listar(Math.max(0, +req.query.desde || 0)))));
 
-function docValido(req, res, comCorpo = true) {
-  const { col, id } = req.params;
-  if (!db.COLECOES.has(col) || !/^[A-Za-z0-9_.-]{1,120}$/.test(id)) { res.status(400).json({ erro: "Documento inválido." }); return false; }
-  if (comCorpo && (!req.body || typeof req.body !== "object" || Array.isArray(req.body))) { res.status(400).json({ erro: "Dados inválidos." }); return false; }
-  return true;
-}
-// O que só o administrador pode fazer. Devolve o motivo da recusa, ou null.
-function proibido(u, op, col, antes, novo) {
-  if (u.papel === "admin") return null;
-  if (col === "config") return "Só o administrador altera as configurações.";
-  if (op === "excluir") return col === "clientes" && antes?.status === "pre" ? null : "Só o administrador exclui registros.";
-  if (col === "contratos" && antes) {
-    if (novo.cancelado && !antes.cancelado) return "Só o administrador cancela contratos.";
-    const ids = new Set((novo.movimentos || []).map(m => m.id));
-    if ((antes.movimentos || []).some(m => !ids.has(m.id))) return "Só o administrador estorna pagamentos.";
-    for (const p of antes.parcelas || []) {
-      const q = (novo.parcelas || []).find(x => x.n === p.n);
-      if ((p.pagamentos || []).length > (q?.pagamentos || []).length) return "Só o administrador estorna pagamentos.";
-    }
-  }
-  return null;
-}
 // Guarda só os campos que mudaram.
 function diferenca(antes, depois) {
   const a = {}, d = {};
@@ -145,24 +159,67 @@ function diferenca(antes, depois) {
   }
   return Object.keys(d).length ? { antes: a, depois: d } : null;
 }
-const escrita = op => assincrono(async (req, res) => {
-  if (!docValido(req, res, op !== "excluir")) return;
-  const { col, id } = req.params, antes = await db.ler(col, id);
-  if (op === "mesclar" && !antes) return res.status(404).json({ erro: "Documento não encontrado." });
-  const novo = op === "excluir" ? null : op === "mesclar" ? { ...antes, ...req.body } : req.body;
-  const motivo = proibido(req.u, op, col, antes, novo);
-  if (motivo) return res.status(403).json({ erro: motivo });
-  if (op === "excluir") await db.excluir(col, id);
-  else if (op === "mesclar") await db.mesclar(col, id, req.body);
-  else await db.gravar(col, id, req.body);
+// Duas pessoas no mesmo registro: a tela manda no cabeçalho If-Match a versão em que se baseou, e o servidor só grava
+// se o registro ainda estiver na versão que acabou de ler. Quem chega depois recebe 409 e refaz com os dados novos,
+// em vez de apagar sem saber o que a outra pessoa lançou (um pagamento, por exemplo).
+const CONFLITO = "Outra pessoa alterou este registro agora há pouco. Atualizei a tela: confira e tente de novo.";
+const recusa = (status, erro) => Object.assign(new Error(erro), { status, erro });
+const OPERACOES = ["gravar", "mesclar", "excluir"];
+
+// Uma gravação, dentro da transação `q`: confere versão, permissão e formato, e grava. Lança `recusa` se não puder.
+async function aplica(q, u, { op, col, id, dados, base }) {
+  if (!OPERACOES.includes(op) || !db.COLECOES.has(col) || !/^[A-Za-z0-9_.-]{1,120}$/.test(id)) throw recusa(400, "Documento inválido.");
+  if (op !== "excluir" && (!dados || typeof dados !== "object" || Array.isArray(dados))) throw recusa(400, "Dados inválidos.");
+  const atual = await db.lerDoc(col, id, q), antes = atual?.dados ?? null;
+  if (base && atual?.versao !== base) throw recusa(409, CONFLITO);
+  if (op === "mesclar" && !antes) throw recusa(404, "Documento não encontrado.");
+  const novo = op === "excluir" ? null : op === "mesclar" ? { ...antes, ...dados } : dados;
+  const motivo = proibido(u, op, col, antes, novo);
+  if (motivo) throw recusa(403, motivo);
+  const problema = novo && invalido(col, id, novo);
+  if (problema) throw recusa(400, problema);
+  let versao = null;
+  try {
+    if (op === "excluir") await db.excluir(col, id, q);
+    else versao = await db.gravar(col, id, novo, atual?.versao ?? null, q);
+  } catch (e) {
+    if (e.conflito) throw recusa(409, CONFLITO);
+    throw e;
+  }
+  return { op, col, id, antes, novo, versao };
+}
+function registra(req, { op, col, id, antes, novo }) {
   if (op === "excluir") { if (antes) audita(req, { acao: "excluir", colecao: col, id, antes }); }
   else if (!antes) audita(req, { acao: "criar", colecao: col, id, depois: novo });
   else { const d = diferenca(antes, novo); if (d) audita(req, { acao: "alterar", colecao: col, id, ...d }); }
-  res.json({ ok: true });
+}
+const respondeRecusa = (e, res) => { if (!e.status) throw e; res.status(e.status).json({ erro: e.erro }); };
+
+const escrita = op => assincrono(async (req, res) => {
+  try {
+    const f = await db.emTransacao(q => aplica(q, req.u, { op, col: req.params.col, id: req.params.id, dados: req.body, base: +req.headers["if-match"] || null }));
+    registra(req, f);
+    res.json({ ok: true, versao: f.versao });
+  } catch (e) { respondeRecusa(e, res); }
 });
 app.put("/api/doc/:col/:id", exige(), escrita("gravar"));
 app.patch("/api/doc/:col/:id", exige(), escrita("mesclar"));
 app.delete("/api/doc/:col/:id", exige(), escrita("excluir"));
+// Várias gravações que só fazem sentido juntas (pagamento no contrato + lançamento no caixa, por exemplo): entram
+// todas ou nenhuma. Cada uma passa pelas mesmas conferências de uma gravação sozinha.
+app.post("/api/lote", exige(), assincrono(async (req, res) => {
+  const ops = req.body?.ops;
+  if (!Array.isArray(ops) || !ops.length || ops.length > 400 || ops.some(o => !o || typeof o !== "object")) return res.status(400).json({ erro: "Lote inválido." });
+  try {
+    const feitos = await db.emTransacao(async q => {
+      const lista = [];
+      for (const o of ops) lista.push(await aplica(q, req.u, { op: o.op, col: String(o.col), id: String(o.id), dados: o.dados, base: +o.base || null }));
+      return lista;
+    });
+    feitos.forEach(f => registra(req, f));
+    res.json({ ok: true, versoes: feitos.map(f => f.versao) });
+  } catch (e) { respondeRecusa(e, res); }
+}));
 
 /* ---------- administração ---------- */
 const PAPEIS = ["admin", "operador"];
@@ -172,9 +229,9 @@ app.post("/api/usuarios", exige("admin"), assincrono(async (req, res) => {
   const nome = String(req.body?.nome || "").trim(), email = String(req.body?.email || "").trim().toLowerCase();
   const senha = String(req.body?.senha || ""), papel = PAPEIS.includes(req.body?.papel) ? req.body.papel : "operador";
   if (!nome || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ erro: "Informe nome e e-mail válidos." });
-  if (senha.length < 8) return res.status(400).json({ erro: "A senha precisa ter pelo menos 8 caracteres." });
+  if (!senhaValida(senha)) return res.status(400).json({ erro: ERRO_SENHA });
   try {
-    const id = await db.usuarios.criar({ email, nome, senha: hashSenha(senha), papel });
+    const id = await db.usuarios.criar({ email, nome: nome.slice(0, 120), senha: await hashSenha(senha), papel });
     audita(req, { acao: "usuario_criado", colecao: "usuarios", id: String(id), depois: { nome, email, papel } });
     res.json({ id });
   } catch (e) {
@@ -188,13 +245,14 @@ app.patch("/api/usuarios/:id", exige("admin"), assincrono(async (req, res) => {
   if (id === req.u.id && (b.ativo === false || (b.papel && b.papel !== "admin"))) return res.status(400).json({ erro: "Você não pode desativar nem rebaixar o seu próprio usuário." });
   if (typeof b.ativo === "boolean") campos.ativo = b.ativo;
   if (PAPEIS.includes(b.papel)) campos.papel = b.papel;
-  if (typeof b.nome === "string" && b.nome.trim()) campos.nome = b.nome.trim();
+  if (typeof b.nome === "string" && b.nome.trim()) campos.nome = b.nome.trim().slice(0, 120);
   if (b.senha !== undefined) {
-    if (String(b.senha).length < 8) return res.status(400).json({ erro: "A senha precisa ter pelo menos 8 caracteres." });
-    campos.senha = hashSenha(String(b.senha));
+    if (!senhaValida(String(b.senha))) return res.status(400).json({ erro: ERRO_SENHA });
+    campos.senha = await hashSenha(String(b.senha));
     campos.trocar_senha = true; // senha definida pelo administrador: a pessoa troca no próximo acesso
   }
-  await db.usuarios.alterar(id, campos, campos.senha !== undefined || campos.ativo === false);
+  // senha nova, desativação ou mudança de papel derrubam os logins abertos dessa pessoa
+  await db.usuarios.alterar(id, campos, campos.senha !== undefined || campos.ativo === false || (campos.papel !== undefined && campos.papel !== alvo.papel));
   const { senha, ...semSenha } = campos;
   audita(req, { acao: "usuario_alterado", colecao: "usuarios", id: String(id), antes: resumoUsuario(alvo), depois: { ...semSenha, ...(senha ? { senhaRedefinida: true } : {}) } });
   res.json({ ok: true });
@@ -232,7 +290,7 @@ app.post("/api/tarefas/lembretes", assincrono(async (req, res) => {
   const a = crypto.createHash("sha256").update(veio).digest(), b = crypto.createHash("sha256").update(esperado).digest();
   if (!crypto.timingSafeEqual(a, b)) return res.status(401).json({ erro: "Token inválido." });
   const r = await lembretes.executar();
-  db.auditar({ acao: "lembretes_automaticos", depois: r, ip: req.ip }).catch(() => {});
+  db.auditar({ acao: "lembretes_automaticos", depois: r, ip: req.ipCliente }).catch(() => {});
   res.json(r);
 }));
 
@@ -266,7 +324,7 @@ app.post("/api/publico/precadastro", assincrono(async (req, res) => {
   ].filter(([ok]) => !ok).map(([, rotulo]) => rotulo);
   if (faltam.length) return res.status(400).json({ erro: `Preencha: ${faltam.join(", ")}.`, faltam });
   if (b.aceite !== true) return res.status(400).json({ erro: "É preciso concordar com o uso dos dados." });
-  if (!envios(req.ip)) return res.status(429).json({ erro: "Muitos envios deste aparelho. Tente de novo mais tarde." });
+  if (!envios(req.ipCliente)) return res.status(429).json({ erro: "Muitos envios deste aparelho. Tente de novo mais tarde." });
 
   const cep = d.cep.replace(/(\d{5})(\d{3})/, "$1-$2"), nome = d.nome, cpf = d.cpf;
   const endereco = [`${d.logradouro}, ${d.numero}`, d.bairro, `${d.cidade}/${d.uf}`, cep].join(" · ");
@@ -306,7 +364,7 @@ if ((await db.usuarios.contar()) === 0) {
   const email = process.env.ADMIN_EMAIL, senha = process.env.ADMIN_SENHA;
   if (email && senha && senha.length >= 8) {
     // a senha inicial fica nas variáveis do servidor, então o administrador troca no primeiro acesso
-    await db.usuarios.criar({ email: email.toLowerCase(), nome: "Administrador", senha: hashSenha(senha), papel: "admin" });
+    await db.usuarios.criar({ email: email.toLowerCase(), nome: "Administrador", senha: await hashSenha(senha), papel: "admin" });
     console.log("Administrador criado:", email);
   } else console.warn("Nenhum usuário cadastrado. Defina ADMIN_EMAIL e ADMIN_SENHA (8+ caracteres) para criar o primeiro administrador.");
 }

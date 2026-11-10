@@ -61,7 +61,7 @@
 <script>
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const BRL = v => v == null ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const fd = s => s ? String(s).split("-").reverse().join("/") : "—";
+const fd = s => s ? esc(String(s).split("-").reverse().join("/")) : "—";
 const ST = { enviado: ["Enviado", "ok"], "vai enviar": ["Vai enviar", ""], "vai pular": ["Não vai enviar", ""], pulado: ["Não enviado", ""], erro: ["Erro", "bad"], enviando: ["Enviando", ""] };
 const pill = (s, e) => { const [t, k] = ST[s] || [s, ""]; return `<span class="pill ${k === "ok" ? "ok" : ""}" ${k === "bad" ? 'style="background:var(--bad-soft);color:var(--bad)"' : ""}>${t}</span>${e ? `<div class="muted" style="font-size:12px">${esc(e)}</div>` : ""}`; };
 const mostra = m => { const el = document.getElementById("erro"); el.textContent = m; el.hidden = !m; };

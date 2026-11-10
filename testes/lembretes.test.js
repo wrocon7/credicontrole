@@ -59,12 +59,13 @@ try {
   await grava("clientes", "c4", { nome: "Davi Melo", telefone: "", status: "ativo" });
   const saldo = (cli, venc, extra = {}) => ({ clienteId: cli, valor: 1000, taxa: 30, modalidade: "saldo", dataContrato: k.addDays(hoje, -10), vencimento: venc, movimentos: [], ...extra });
   await grava("contratos", "k1", saldo("c1", amanha));                                    // amanhã: 1000 × (1 + 1% × 11 dias) = 1.110,00
-  await grava("contratos", "k2", { clienteId: "c2", modalidade: "simples", parcelas: [{ n: 1, venc: hoje, valor: 500, pagamentos: [] }] }); // hoje: dá erro no WhatsApp
+  const parcela = (cli, valor, extra = {}) => ({ clienteId: cli, valor, taxa: 10, modalidade: "simples", dataContrato: k.addDays(hoje, -30), parcelas: [{ n: 1, venc: hoje, valor, pagamentos: [], ...extra }] });
+  await grava("contratos", "k2", parcela("c2", 500)); // hoje: dá erro no WhatsApp
   await grava("contratos", "k3", saldo("c3", amanha));                                    // cliente não quer
-  await grava("contratos", "k4", { clienteId: "c4", modalidade: "simples", parcelas: [{ n: 1, venc: hoje, valor: 300, pagamentos: [] }] }); // sem celular
+  await grava("contratos", "k4", parcela("c4", 300)); // sem celular
   await grava("contratos", "k5", saldo("c1", k.addDays(hoje, 5)));                        // fora dos dias configurados
   await grava("contratos", "k6", saldo("c1", amanha, { cancelado: true }));               // cancelado
-  await grava("contratos", "k7", { clienteId: "c1", modalidade: "simples", parcelas: [{ n: 1, venc: hoje, valor: 200, pagamentos: [], quitada: true }] }); // já pago
+  await grava("contratos", "k7", parcela("c1", 200, { quitada: true })); // já pago
 
   const desligado = await chama("POST", "/api/tarefas/lembretes", null, { Authorization: `Bearer ${CRON}` });
   confere("com os lembretes desligados, a tarefa não envia nada", desligado.json?.desligado === true && pedidos.length === 0);

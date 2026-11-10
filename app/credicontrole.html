@@ -288,6 +288,13 @@ async function put(col,obj){
 }
 async function upd(col,id,data){if(!canWrite){toast("Você tem acesso só de leitura.");throw new Error("ro")}await db.doc(col+"/"+id).update(data)}
 async function del(col,id){if(!canWrite){toast("Você tem acesso só de leitura.");throw new Error("ro")}await db.doc(col+"/"+id).delete()}
+// Gravações que só fazem sentido juntas (pagamento no contrato + lançamento no caixa). No servidor próprio entram
+// todas ou nenhuma; onde isso não existe, vão uma por uma. ops = [{op:"gravar"|"mesclar"|"excluir",col,id,dados}]
+async function gravaJuntos(ops){
+  if(!canWrite){toast("Você tem acesso só de leitura.");throw new Error("ro")}
+  if(db.lote)return db.lote(ops);
+  for(const o of ops){const d=db.doc(o.col+"/"+o.id);await(o.op==="gravar"?d.set(o.dados):o.op==="mesclar"?d.update(o.dados):d.delete())}
+}
 
 /* ---------- UI util ---------- */
 let toastT;
@@ -507,7 +514,7 @@ function verContrato(id){
   const cl=cli(c.clienteId),ps=c.parcelas||[];
   const totalC=r2(ps.reduce((a,p)=>a+p.valor,0)),pago=r2(ps.reduce((a,p)=>a+pagoP(p),0));
   openDrawer(`<div class="hd"><div><h2>Contrato de ${esc(cl.nome)}${ex(c)}</h2><div class="row" style="margin-top:4px">${pillC(c)}<span class="muted">${MOD[c.modalidade]} · ${PER[c.periodicidade]}</span></div></div><button data-act="close">Fechar</button></div>
-  ${bannerInad(c)}<div class="panel"><div class="body dl">${[["Valor emprestado",money(c.valor)],["Taxa",(+c.taxa).toLocaleString("pt-BR")+"% ao período"],["Total do contrato",money(totalC)],["Lucro previsto",money(totalC-c.valor)],["Já recebido",money(pago)],["Saldo em aberto",money(saldoContrato(c))],["Data do contrato",fdate(c.dataContrato)],["Multa / mora",`${c.multa}% + ${c.mora}%/dia`]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("")}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
+  ${bannerInad(c)}<div class="panel"><div class="body dl">${[["Valor emprestado",money(c.valor)],["Taxa",(+c.taxa).toLocaleString("pt-BR")+"% ao período"],["Total do contrato",money(totalC)],["Lucro previsto",money(totalC-c.valor)],["Já recebido",money(pago)],["Saldo em aberto",money(saldoContrato(c))],["Data do contrato",fdate(c.dataContrato)],["Multa / mora",`${esc(c.multa)}% + ${esc(c.mora)}%/dia`]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("")}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
   <section class="panel"><header><h2>Parcelas</h2></header><div class="tbl"><table><thead><tr><th>#</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Encargos</th><th class="num">Pago</th><th>Situação</th><th></th></tr></thead><tbody>${ps.map(p=>{const e=encargos(p,c);const st=quitadaP(p)?`<span class="pill ok">Paga ${fdate((p.pagamentos.at(-1)||{}).data)}</span>`:e.atraso?`<span class="pill bad">${e.atraso} dias</span>`:e.pago>0?'<span class="pill warn">Parcial</span>':'<span class="pill">Aberta</span>';
     return `<tr><td>${p.n}</td><td>${fdate(p.venc)}</td><td class="num">${money(p.valor)}</td><td class="num">${quitadaP(p)?"—":money(e.multa+e.mora)}</td><td class="num">${money(e.pago)}</td><td>${st}</td><td><div class="row">${!quitadaP(p)&&!c.cancelado?`<button class="sm pri" data-act="pagar" data-id="${c.id}" data-n="${p.n}">Receber</button><button class="sm" data-act="cobrar" data-id="${c.id}" data-n="${p.n}">Cobrar</button>`:""}${(p.pagamentos||[]).length?`<button class="sm" data-act="estornar" data-id="${c.id}" data-n="${p.n}">Estornar</button>`:""}</div></td></tr>`}).join("")}</tbody></table></div></section>
   <div class="row">${!c.cancelado&&statusC(c)!=="quitado"?`${btnInad(c)}<button data-act="cancelarC" data-id="${id}">Cancelar contrato</button>`:""}<button class="danger" data-act="delContrato" data-id="${id}">Excluir contrato</button><button data-act="verCliente" data-id="${c.clienteId}">Ver cliente</button></div>`);
@@ -572,27 +579,33 @@ function formContrato(cliId){
     const c={id:uid("ct"),clienteId:d.clienteId,valor:+d.valor,taxa:+d.taxa,modalidade:d.modalidade,primeiroVenc:d.primeiroVenc,dataContrato:d.dataContrato,obs:d.obs,criadoEm:new Date().toISOString()};
     if(d.modalidade==="saldo")Object.assign(c,{vencimento:d.primeiroVenc,movimentos:[],renegociacoes:[],parcelas:[]});
     else{Object.assign(c,{periodicidade:d.periodicidade,nParcelas:+d.nParcelas,multa:+d.multa,mora:+d.mora});c.parcelas=gerarParcelas(c)}
-    try{await put("contratos",c);await put("transacoes",{id:uid("tx"),tipo:"saida",valor:c.valor,data:c.dataContrato,categoria:"Empréstimo concedido",descricao:"Empréstimo para "+cli(c.clienteId).nome,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,criadoEm:new Date().toISOString()});
+    const {id:cid,...dadosC}=c;
+    try{await gravaJuntos([{op:"gravar",col:"contratos",id:cid,dados:dadosC},{op:"gravar",col:"transacoes",id:uid("tx"),dados:{tipo:"saida",valor:c.valor,data:c.dataContrato,categoria:"Empréstimo concedido",descricao:"Empréstimo para "+cli(c.clienteId).nome,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,criadoEm:new Date().toISOString()}}]);
       closeTop();toast("Contrato criado");verContrato(c.id)}catch(_){}};
 }
 function formPagar(cid,n){
   const c=S.contratos.find(x=>x.id===cid),p=c&&c.parcelas.find(x=>x.n===n);if(!p)return;
   const e=encargos(p,c);
   openModal(`<h3>Receber parcela ${p.n}/${c.parcelas.length} · ${esc(cli(c.clienteId).nome)}</h3>
-  <div class="calc"><div><span>Valor da parcela</span><span>${money(p.valor)}</span></div>${e.atraso?`<div><span>Multa (${c.multa}%)</span><span>${money(e.multa)}</span></div><div><span>Mora (${e.atraso} dias × ${c.mora}%)</span><span>${money(e.mora)}</span></div>`:""}${e.pago?`<div><span>Já pago</span><span>− ${money(e.pago)}</span></div>`:""}<div class="t"><span>Total devido hoje</span><span>${money(e.devido)}</span></div></div>
+  <div class="calc"><div><span>Valor da parcela</span><span>${money(p.valor)}</span></div>${e.atraso?`<div><span>Multa (${esc(c.multa)}%)</span><span>${money(e.multa)}</span></div><div><span>Mora (${e.atraso} dias × ${esc(c.mora)}%)</span><span>${money(e.mora)}</span></div>`:""}${e.pago?`<div><span>Já pago</span><span>− ${money(e.pago)}</span></div>`:""}<div class="t"><span>Total devido hoje</span><span>${money(e.devido)}</span></div></div>
   <form id="fPag" class="form"><label class="f">Valor recebido (R$)<input name="valor" type="number" step="0.01" min="0.01" required value="${e.devido.toFixed(2)}"></label>
   <label class="f">Data do pagamento<input name="data" type="date" required value="${today()}"></label>
   <label class="f full">Forma<select name="forma"><option>Pix</option><option>Dinheiro</option><option>Transferência</option><option>Cartão</option></select></label>
   <p class="muted full" style="margin:0">Se o valor for menor que o devido, a parcela fica com pagamento parcial e o restante continua em aberto.</p>
   <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Registrar recebimento</button></div></form>`);
   $("#fPag").onsubmit=async ev=>{ev.preventDefault();const d=formData(ev.target),v=r2(+d.valor);
-    const ed=encargos(p,c,d.data),txId=uid("tx");
-    const parcelas=c.parcelas.map(x=>x.n!==n?x:{...x,pagamentos:[...(x.pagamentos||[]),{data:d.data,valor:v,txId,forma:d.forma}],quitada:v>=ed.devido-0.009});
-    try{await put("transacoes",{id:txId,tipo:"entrada",valor:v,data:d.data,categoria:"Recebimento de parcela",descricao:`Parcela ${n}/${c.parcelas.length} · ${cli(c.clienteId).nome}`,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,criadoEm:new Date().toISOString()});
-      await upd("contratos",c.id,{parcelas});closeTop();toast(v>=ed.devido-0.009?"Parcela quitada":"Pagamento parcial registrado");if($(".drawer"))verContrato(c.id)}catch(_){}};
+    // o contrato como está agora: outra pessoa pode ter lançado um pagamento com esta janela aberta
+    const c2=S.contratos.find(x=>x.id===cid),p2=c2&&c2.parcelas.find(x=>x.n===n);
+    if(!p2||c2.cancelado||quitadaP(p2)){closeTop();toast("Esta parcela não está mais em aberto.");return}
+    const ed=encargos(p2,c2,d.data),txId=uid("tx"),quita=v>=ed.devido-0.009;
+    if(v>ed.devido+0.009){toast("O valor passa do total devido ("+money(ed.devido)+").");return}
+    const parcelas=c2.parcelas.map(x=>x.n!==n?x:{...x,pagamentos:[...(x.pagamentos||[]),{data:d.data,valor:v,txId,forma:d.forma}],quitada:quita});
+    try{await gravaJuntos([{op:"mesclar",col:"contratos",id:cid,dados:{parcelas}},
+        {op:"gravar",col:"transacoes",id:txId,dados:{tipo:"entrada",valor:v,data:d.data,categoria:"Recebimento de parcela",descricao:`Parcela ${n}/${c2.parcelas.length} · ${cli(c2.clienteId).nome}`,forma:d.forma,contratoId:cid,clienteId:c2.clienteId,criadoEm:new Date().toISOString()}}]);
+      closeTop();toast(quita?"Parcela quitada":"Pagamento parcial registrado");if($(".drawer"))verContrato(cid)}catch(_){}};
 }
 function formPagarSaldo(cid){
-  const c=S.contratos.find(x=>x.id===cid);if(!c)return;
+  let c=S.contratos.find(x=>x.id===cid);if(!c)return;
   const x0=extrato(c),t=today();
   openModal(`<h3>Registrar pagamento · ${esc(cli(c.clienteId).nome)}</h3><div class="calc" id="pgCalc"></div>
   <form id="fPag" class="form"><label class="f">Data do pagamento<input name="data" type="date" required min="${x0.ultima}" value="${t<x0.ultima?x0.ultima:t}"></label>
@@ -610,24 +623,31 @@ function formPagarSaldo(cid){
   f.oninput=calc;calc();
   f.querySelectorAll("[data-fill]").forEach(b=>b.onclick=()=>{const x=extrato(c,F("data").value||t),j=b.dataset.fill==="juros";
     F("valor").value=(j?x.jurosHoje:x.saldoHoje).toFixed(2);if(j&&!F("novoVenc").value)F("novoVenc").value=addMonths(c.vencimento,1);calc()});
-  f.onsubmit=async ev=>{ev.preventDefault();const {x,v,pj,pc,dep}=calc(),d=formData(f);
+  f.onsubmit=async ev=>{ev.preventDefault();
+    // o contrato como está agora (outra pessoa pode ter lançado um pagamento com esta janela aberta); o cálculo é refeito
+    c=S.contratos.find(x=>x.id===cid)||c;
+    const {x,v,pj,pc,dep}=calc(),d=formData(f);
+    if(c.cancelado||x.quitado){closeTop();toast("Este contrato não está mais em aberto.");return}
+    if(!(v>0)){toast("Informe o valor recebido.");return}
     if(d.data<x.ultima){toast("A data não pode ser anterior ao último movimento ("+fdate(x.ultima)+").");return}
     if(v>x.saldoHoje+0.009){toast("O valor passa do total para quitar ("+money(x.saldoHoje)+").");return}
     const now=new Date().toISOString(),nome=cli(c.clienteId).nome,base={tipo:"entrada",data:d.data,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,criadoEm:now};
-    const m={id:uid("mv"),data:d.data,valor:v,juros:pj,capital:pc,forma:d.forma,criadoEm:now},mud={};
+    const m={id:uid("mv"),data:d.data,valor:v,juros:pj,capital:pc,forma:d.forma,criadoEm:now},mud={},caixa=[];
+    if(pj>0){m.txJ=uid("tx");caixa.push({op:"gravar",col:"transacoes",id:m.txJ,dados:{...base,valor:pj,categoria:"Pagamento de juros",descricao:"Juros · "+nome}})}
+    if(pc>0){m.txC=uid("tx");caixa.push({op:"gravar",col:"transacoes",id:m.txC,dados:{...base,valor:pc,categoria:"Pagamento de capital",descricao:"Capital · "+nome}})}
     if(d.novoVenc&&d.novoVenc!==c.vencimento&&dep>0.009){m.vencAnterior=c.vencimento;mud.vencimento=d.novoVenc;mud.renegociacoes=[...(c.renegociacoes||[]),{data:d.data,de:c.vencimento,para:d.novoVenc,motivo:"Pagamento de "+money(v),movId:m.id}]}
-    try{
-      if(pj>0){m.txJ=uid("tx");await put("transacoes",{...base,id:m.txJ,valor:pj,categoria:"Pagamento de juros",descricao:"Juros · "+nome})}
-      if(pc>0){m.txC=uid("tx");await put("transacoes",{...base,id:m.txC,valor:pc,categoria:"Pagamento de capital",descricao:"Capital · "+nome})}
-      await upd("contratos",c.id,{...mud,movimentos:[...(c.movimentos||[]),m]});
-      closeTop();toast(dep<=0.009?"Contrato quitado":"Pagamento registrado");if($(".drawer"))setTimeout(()=>verContrato(c.id),300)}catch(_){}};
+    try{await gravaJuntos([{op:"mesclar",col:"contratos",id:cid,dados:{...mud,movimentos:[...(c.movimentos||[]),m]}},...caixa]);
+      closeTop();toast(dep<=0.009?"Contrato quitado":"Pagamento registrado");if($(".drawer"))setTimeout(()=>verContrato(cid),300)}catch(_){}};
 }
 function estornarSaldo(cid){
   const c=S.contratos.find(x=>x.id===cid),last=c&&extrato(c).linhas.at(-1).mov;if(!last)return;
   confirmar(`Estornar o pagamento de ${money(last.valor)} feito em ${fdate(last.data)}?`,async()=>{
-    const r=(c.renegociacoes||[]).find(x=>x.movId===last.id),data={movimentos:(c.movimentos||[]).filter(m=>m.id!==last.id)};
-    if(r){data.renegociacoes=c.renegociacoes.filter(x=>x!==r);if(c.vencimento===r.para)data.vencimento=r.de}
-    try{await upd("contratos",cid,data);for(const t of [last.txJ,last.txC])if(t)await del("transacoes",t);toast("Pagamento estornado");setTimeout(()=>verContrato(cid),300)}catch(_){}
+    const c2=S.contratos.find(x=>x.id===cid),ult=c2&&extrato(c2).linhas.at(-1).mov; // o contrato como está agora
+    if(!ult||ult.id!==last.id){toast("O contrato mudou. Abra de novo e confira.");return}
+    const r=(c2.renegociacoes||[]).find(x=>x.movId===last.id),data={movimentos:(c2.movimentos||[]).filter(m=>m.id!==last.id)};
+    if(r){data.renegociacoes=c2.renegociacoes.filter(x=>x!==r);if(c2.vencimento===r.para)data.vencimento=r.de}
+    try{await gravaJuntos([{op:"mesclar",col:"contratos",id:cid,dados:data},...[last.txJ,last.txC].filter(Boolean).map(t=>({op:"excluir",col:"transacoes",id:t}))]);
+      toast("Pagamento estornado");setTimeout(()=>verContrato(cid),300)}catch(_){}
   },"Estornar");
 }
 function formMarcarInad(cid){
@@ -644,15 +664,19 @@ function formRenegociar(cid){
   <form id="fRen" class="form"><label class="f">Novo vencimento<input name="para" type="date" required value="${addMonths(c.vencimento<today()?today():c.vencimento,1)}"></label>
   <label class="f">Motivo<input name="motivo" placeholder="Ex.: pediu mais prazo"></label>
   <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Salvar</button></div></form>`);
-  $("#fRen").onsubmit=async e=>{e.preventDefault();const d=formData(e.target);if(d.para===c.vencimento){closeTop();return}
-    try{await upd("contratos",cid,{vencimento:d.para,renegociacoes:[...(c.renegociacoes||[]),{data:today(),de:c.vencimento,para:d.para,motivo:d.motivo||""}]});closeTop();toast("Vencimento alterado");setTimeout(()=>verContrato(cid),300)}catch(_){}};
+  $("#fRen").onsubmit=async e=>{e.preventDefault();const d=formData(e.target),c2=S.contratos.find(x=>x.id===cid)||c; // o contrato como está agora
+    if(d.para===c2.vencimento){closeTop();return}
+    try{await upd("contratos",cid,{vencimento:d.para,renegociacoes:[...(c2.renegociacoes||[]),{data:today(),de:c2.vencimento,para:d.para,motivo:d.motivo||""}]});closeTop();toast("Vencimento alterado");setTimeout(()=>verContrato(cid),300)}catch(_){}};
 }
 function estornar(cid,n){
   const c=S.contratos.find(x=>x.id===cid),p=c&&c.parcelas.find(x=>x.n===n);if(!p||!(p.pagamentos||[]).length)return;
   const last=p.pagamentos.at(-1);
   confirmar(`Estornar o pagamento de ${money(last.valor)} feito em ${fdate(last.data)}?`,async()=>{
-    const parcelas=c.parcelas.map(x=>x.n!==n?x:{...x,pagamentos:x.pagamentos.slice(0,-1),quitada:false});
-    try{await upd("contratos",cid,{parcelas});if(last.txId)await del("transacoes",last.txId);toast("Pagamento estornado");verContrato(cid)}catch(_){}
+    const c2=S.contratos.find(x=>x.id===cid),p2=c2&&c2.parcelas.find(x=>x.n===n),ult=p2&&(p2.pagamentos||[]).at(-1); // o contrato como está agora
+    if(!ult||ult.txId!==last.txId||ult.valor!==last.valor||ult.data!==last.data){toast("O contrato mudou. Abra de novo e confira.");return}
+    const parcelas=c2.parcelas.map(x=>x.n!==n?x:{...x,pagamentos:x.pagamentos.slice(0,-1),quitada:false});
+    try{await gravaJuntos([{op:"mesclar",col:"contratos",id:cid,dados:{parcelas}},...(last.txId?[{op:"excluir",col:"transacoes",id:last.txId}]:[])]);
+      toast("Pagamento estornado");setTimeout(()=>verContrato(cid),300)}catch(_){}
   },"Estornar");
 }
 function mensagem(cid,n){
@@ -709,7 +733,7 @@ document.addEventListener("click",async e=>{
     case"bloquear":{const c=S.clientes.find(x=>x.id===id);try{await upd("clientes",id,{status:c.status==="bloqueado"?"ativo":"bloqueado"});setTimeout(()=>verCliente(id),300)}catch(_){}break}
     case"delCliente":if(S.contratos.some(k=>k.clienteId===id)){toast("Este cliente tem contratos. Exclua os contratos antes.");break}confirmar("Excluir este cliente?",async()=>{try{await del("clientes",id);closeTop();toast("Cliente excluído")}catch(_){}},"Excluir");break;
     case"cancelarC":confirmar("Cancelar este contrato? As parcelas em aberto deixam de ser cobradas.",async()=>{try{await upd("contratos",id,{cancelado:true});setTimeout(()=>verContrato(id),300)}catch(_){}},"Cancelar contrato");break;
-    case"delContrato":confirmar("Excluir o contrato e todos os lançamentos de caixa ligados a ele?",async()=>{try{for(const t of S.transacoes.filter(x=>x.contratoId===id))await del("transacoes",t.id);await del("contratos",id);closeTop();toast("Contrato excluído")}catch(_){}},"Excluir");break;
+    case"delContrato":confirmar("Excluir o contrato e todos os lançamentos de caixa ligados a ele?",async()=>{try{await gravaJuntos([...S.transacoes.filter(x=>x.contratoId===id).map(t=>({op:"excluir",col:"transacoes",id:t.id})),{op:"excluir",col:"contratos",id}]);closeTop();toast("Contrato excluído")}catch(_){}},"Excluir");break;
     case"delLanc":confirmar("Excluir este lançamento?",async()=>{try{await del("transacoes",id);toast("Lançamento excluído")}catch(_){}},"Excluir");break;
     case"limparEx":confirmar("Remover todos os dados de exemplo?",async()=>{try{for(const col of ["transacoes","contratos","clientes"])for(const x of S[col].filter(x=>x.exemplo))await del(col,x.id);toast("Dados de exemplo removidos")}catch(_){}},"Remover");break;
   }

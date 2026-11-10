@@ -67,18 +67,31 @@ a pasta com o app parado.
 2. Cadastre os operadores em **Usuários** com uma senha provisória. Cada um troca a dele no primeiro acesso.
 3. Em **Configurações**, preencha **"Nome da empresa no formulário público"** e, se quiser, o texto de
    privacidade. A LGPD exige que a pessoa saiba quem recebe os dados.
-4. **Copiar link de pré-cadastro** fica no rodapé do menu. Mande para os clientes, acrescentando `?f=` com a franquia se quiser.
+4. **Copiar mensagem do pré-cadastro** fica no rodapé do menu: copia o texto pronto com o link. Para registrar a
+   franquia, acrescente `?f=NOME` no fim do link.
 5. Apague os dados de teste, se tiver usado o banco embutido para testar.
 
 ## Segurança
 
-- **Papéis:** o *operador* cadastra clientes, cria contratos e registra pagamentos. Só o *administrador* exclui,
-  estorna, cancela contrato, mexe em Configurações, gerencia usuários, vê a auditoria e baixa a cópia de segurança.
-  O servidor recusa essas ações, não só a tela.
+- **Papéis:** o *operador* cadastra clientes, cria contratos, acrescenta pagamentos, renegocia vencimento e marca
+  inadimplência. Só o *administrador* exclui, estorna, cancela contrato, muda valor, taxa ou datas de um contrato,
+  altera um pagamento ou lançamento de caixa já gravado, mexe em Configurações, gerencia usuários, vê a auditoria e
+  baixa a cópia de segurança. O servidor recusa essas ações (regras em `regras.js`), não só a tela.
+- **Gravações juntas:** pagamento no contrato e lançamento no caixa entram na mesma transação (`/api/lote`): ou
+  entram os dois, ou nenhum. O mesmo vale para criar contrato, estornar e excluir.
+- **Duas pessoas no mesmo registro:** cada gravação leva a versão em que a tela se baseou. Se outra pessoa gravou
+  antes, o servidor recusa (erro 409), a tela se atualiza e a pessoa refaz. Ninguém apaga o lançamento do outro sem ver.
+- **Formato:** o servidor confere valores, datas e tipos antes de gravar contratos e lançamentos.
+- **IP de quem acessa:** os limites de tentativas (login, troca de senha, pré-cadastro) e a auditoria usam o IP real.
+  Na Render ele vem do cabeçalho `CF-Connecting-IP` (automático). Em outro servidor, ajuste `TRUST_PROXY` (quantos
+  proxies há na frente; padrão 1) ou `IP_HEADER` (nome do cabeçalho em que o seu proxy entrega o IP).
+- **Outros sites:** pedidos que alteram dados só são aceitos quando vêm das páginas do próprio sistema.
 - **Auditoria** (menu → Auditoria): quem criou, alterou ou excluiu o quê, quando e de qual IP, com o valor antes e
   depois. Também registra logins (inclusive os recusados), trocas de senha, cópias baixadas e pré-cadastros pelo link.
-- **Senhas:** guardadas com scrypt. Trocar a senha (menu → Minha senha) derruba os logins abertos nos outros
-  aparelhos. Senha definida pelo administrador é provisória: a pessoa troca no próximo acesso.
+- **Senhas:** guardadas com scrypt (o custo vai junto do hash e é atualizado no login). Trocar a senha (menu →
+  Minha senha) derruba os logins abertos nos outros aparelhos, assim como desativar o usuário ou mudar o papel dele.
+  Senha definida pelo administrador é provisória: a pessoa troca no próximo acesso. Login: 10 tentativas por
+  aparelho e e-mail e 40 por aparelho, a cada 15 minutos.
 - **Navegador:** HTTPS obrigatório (HSTS), scripts só do próprio servidor (CSP com nonce), sem moldura de outros
   sites e sem cache nas respostas da API.
 - **Ao atualizar para esta versão** todos precisam entrar de novo, e os usuários que já existiam são obrigados a

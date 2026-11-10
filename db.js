@@ -63,40 +63,24 @@ export async function migrar() {
 export async function listar(desde) {
   const versao = Number((await pool.query("select coalesce(max(versao), 0) as m from docs")).rows[0].m);
   const r = desde > 0
-    ? await pool.query("select colecao, id, dados, excluido from docs where versao > $1 order by versao", [desde])
-    : await pool.query("select colecao, id, dados, excluido from docs where not excluido order by versao");
-  return { versao, docs: r.rows };
+    ? await pool.query("select colecao, id, dados, excluido, versao from docs where versao > $1 order by versao", [desde])
+    : await pool.query("select colecao, id, dados, excluido, versao from docs where not excluido order by versao");
+  return { versao, docs: r.rows.map(d => ({ ...d, versao: Number(d.versao) })) };
 }
 
 export async function ler(colecao, id) {
-  const r = await pool.query("select dados from docs where colecao = $1 and id = $2 and not excluido", [colecao, id]);
-  return r.rows[0]?.dados ?? null;
+  return (await lerDoc(colecao, id))?.dados ?? null;
 }
 
-export async function gravar(colecao, id, dados) {
-  const r = await pool.query(
-    "update docs set dados = $3, excluido = false, versao = nextval('docs_versao'), atualizado = now() where colecao = $1 and id = $2",
-    [colecao, id, dados]);
-  if (r.rowCount) return;
-  try {
-    await pool.query("insert into docs (colecao, id, dados) values ($1, $2, $3)", [colecao, id, dados]);
-  } catch (e) {
-    if (e.code !== "23505") throw e; // outro pedido criou o mesmo documento ao mesmo tempo
-    return gravar(colecao, id, dados);
-  }
-}
-
-// Troca só os campos enviados (nível de cima), como o update do claude.ai. Devolve false se o documento não existe.
-export async function mesclar(colecao, id, campos) {
+// Roda `fn` dentro de uma transação: ou todas as gravações entram, ou nenhuma. `fn` recebe a conexão e a repassa
+// como último argumento (`q`) para lerDoc, gravar e excluir.
+export async function emTransacao(fn) {
   const c = await pool.connect();
   try {
     await c.query("begin");
-    const r = await c.query("select dados from docs where colecao = $1 and id = $2 and not excluido for update", [colecao, id]);
-    if (!r.rowCount) { await c.query("rollback"); return false; }
-    await c.query("update docs set dados = $3, versao = nextval('docs_versao'), atualizado = now() where colecao = $1 and id = $2",
-      [colecao, id, { ...r.rows[0].dados, ...campos }]);
+    const r = await fn(c);
     await c.query("commit");
-    return true;
+    return r;
   } catch (e) {
     await c.query("rollback").catch(() => {});
     throw e;
@@ -105,9 +89,32 @@ export async function mesclar(colecao, id, campos) {
   }
 }
 
+// O documento com a versão em que está: quem grava devolve essa versão para provar que ninguém mexeu no meio.
+export async function lerDoc(colecao, id, q = pool) {
+  const r = await q.query("select dados, versao from docs where colecao = $1 and id = $2 and not excluido", [colecao, id]);
+  return r.rows[0] ? { dados: r.rows[0].dados, versao: Number(r.rows[0].versao) } : null;
+}
+
+// Grava o documento inteiro e devolve a nova versão. Com `seVersao`, só grava se o documento ainda estiver nessa
+// versão; se outra pessoa gravou antes, lança um erro com `conflito: true` e nada muda.
+export async function gravar(colecao, id, dados, seVersao = null, q = pool) {
+  if (seVersao) {
+    const r = await q.query(
+      "update docs set dados = $3, versao = nextval('docs_versao'), atualizado = now() where colecao = $1 and id = $2 and versao = $4 and not excluido returning versao",
+      [colecao, id, dados, seVersao]);
+    if (!r.rowCount) throw Object.assign(new Error("O documento mudou desde a leitura."), { conflito: true });
+    return Number(r.rows[0].versao);
+  }
+  const r = await q.query(
+    `insert into docs (colecao, id, dados) values ($1, $2, $3)
+     on conflict (colecao, id) do update set dados = excluded.dados, excluido = false, versao = nextval('docs_versao'), atualizado = now()
+     returning versao`, [colecao, id, dados]);
+  return Number(r.rows[0].versao);
+}
+
 // Exclusão lógica: a linha fica marcada para as telas abertas saberem que o documento sumiu.
-export async function excluir(colecao, id) {
-  await pool.query("update docs set excluido = true, dados = '{}', versao = nextval('docs_versao'), atualizado = now() where colecao = $1 and id = $2",
+export async function excluir(colecao, id, q = pool) {
+  await q.query("update docs set excluido = true, dados = '{}', versao = nextval('docs_versao'), atualizado = now() where colecao = $1 and id = $2",
     [colecao, id]);
 }
 
@@ -140,10 +147,12 @@ export async function listarAuditoria({ antesDe, usuarioId, colecao, busca }) {
 }
 
 export const lembretes = {
-  // Reserva o lembrete para envio. Devolve false se já foi enviado (ou está sendo); lembrete que deu erro pode tentar de novo.
+  // Reserva o lembrete para envio. Devolve false se já foi enviado (ou está sendo). Tenta de novo o que deu erro e o
+  // que ficou parado em "enviando" há mais de 15 minutos (o servidor caiu no meio do envio).
   reservar: async l => (await pool.query(
     `insert into lembretes (chave, contrato_id, cliente_id, nome, telefone, valor, vencimento, status) values ($1, $2, $3, $4, $5, $6, $7, $8)
-     on conflict (chave) do update set status = excluded.status, quando = now(), erro = null where lembretes.status = 'erro' returning chave`,
+     on conflict (chave) do update set status = excluded.status, quando = now(), erro = null
+     where lembretes.status = 'erro' or (lembretes.status = 'enviando' and lembretes.quando < now() - interval '15 minutes') returning chave`,
     [l.chave, l.contratoId, l.clienteId, l.nome, l.telefone, l.valor, l.venc, l.status])).rowCount > 0,
   concluir: async (chave, { status, erro = null, wamid = null }) =>
     pool.query("update lembretes set status = $2, erro = $3, wamid = $4, quando = now() where chave = $1", [chave, status, erro, wamid]),

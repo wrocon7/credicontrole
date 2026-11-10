@@ -3,7 +3,7 @@
 // doc().set/update/delete/onSnapshot. Busca mudanças a cada 4 s e recarrega tudo a cada 2 min.
 (function () {
   "use strict";
-  const docs = {}, ouvintes = [];
+  const docs = {}, vers = {}, ouvintes = []; // vers = versão de cada documento, devolvida ao servidor em cada gravação
   let versao = 0, eu = null, puxando = false, denovo = false;
   const copia = v => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
   const avisa = () => ouvintes.forEach(f => f());
@@ -16,10 +16,10 @@
     setTimeout(() => el.remove(), 4000);
   }
 
-  async function api(metodo, url, corpo) {
+  async function api(metodo, url, corpo, cabecalhos = {}) {
     const r = await fetch(url, {
       method: metodo, credentials: "same-origin",
-      headers: corpo ? { "Content-Type": "application/json" } : {},
+      headers: { ...(corpo ? { "Content-Type": "application/json" } : {}), ...cabecalhos },
       body: corpo ? JSON.stringify(corpo) : undefined,
     });
     if (r.status === 401) { location.href = "/login"; throw new Error("Sessão encerrada"); }
@@ -34,18 +34,37 @@
     puxando = true;
     try {
       const j = await api("GET", "/api/dados" + (tudo ? "" : "?desde=" + versao));
-      if (tudo) for (const k in docs) delete docs[k];
-      for (const d of j.docs) { const k = d.colecao + "/" + d.id; if (d.excluido) delete docs[k]; else docs[k] = d.dados; }
+      if (tudo) for (const k in docs) { delete docs[k]; delete vers[k]; }
+      for (const d of j.docs) { const k = d.colecao + "/" + d.id; if (d.excluido) { delete docs[k]; delete vers[k]; } else { docs[k] = d.dados; vers[k] = d.versao; } }
       versao = tudo ? j.versao : Math.max(versao, j.versao);
       if (tudo || j.docs.length) avisa();
     } catch (e) { console.warn("CrediControle:", e.message); }
     finally { puxando = false; if (denovo) { denovo = false; puxa(false); } }
   }
 
-  // Aplica na tela na hora e confirma no servidor; se o servidor recusar, recarrega tudo.
+  const anota = (p, v) => { if (v) vers[p] = Math.max(vers[p] || 0, v); else delete vers[p]; };
+
+  // Aplica na tela na hora e confirma no servidor; se o servidor recusar, recarrega tudo. A versão em que a tela se
+  // baseou vai junto (If-Match): se outra pessoa gravou antes, o servidor recusa em vez de gravar por cima.
   async function escreve(metodo, col, id, corpo, local) {
+    const p = col + "/" + id, base = metodo !== "DELETE" && vers[p] ? { "If-Match": String(vers[p]) } : {};
     local(); avisa();
-    try { await api(metodo, `/api/doc/${col}/${encodeURIComponent(id)}`, corpo); }
+    try { anota(p, (await api(metodo, `/api/doc/${col}/${encodeURIComponent(id)}`, corpo, base)).versao); }
+    catch (e) { toast("Não foi possível salvar: " + e.message); await puxa(true); throw e; }
+    puxa(false);
+  }
+
+  // Várias gravações que só fazem sentido juntas: no servidor entram todas ou nenhuma.
+  // ops = [{ op: "gravar" | "mesclar" | "excluir", col, id, dados }]
+  async function lote(ops) {
+    const corpo = ops.map(o => ({ op: o.op, col: o.col, id: o.id, dados: o.dados, base: o.op !== "excluir" ? vers[o.col + "/" + o.id] : undefined }));
+    for (const o of ops) {
+      const p = o.col + "/" + o.id;
+      if (o.op === "excluir") delete docs[p];
+      else docs[p] = o.op === "mesclar" ? { ...(docs[p] || {}), ...copia(o.dados) } : copia(o.dados);
+    }
+    avisa();
+    try { const j = await api("POST", "/api/lote", { ops: corpo }); ops.forEach((o, i) => anota(o.col + "/" + o.id, j.versoes[i])); }
     catch (e) { toast("Não foi possível salvar: " + e.message); await puxa(true); throw e; }
     puxa(false);
   }
@@ -53,6 +72,7 @@
   const snapCol = col => ({ docs: Object.keys(docs).filter(k => k.startsWith(col + "/")).map(k => ({ id: k.slice(col.length + 1), data: () => copia(docs[k]) })) });
   let pronto;
   const db = {
+    lote,
     collection: col => ({ limit: () => ({ onSnapshot: cb => { const f = () => cb(snapCol(col)); ouvintes.push(f); pronto.then(f); } }) }),
     doc: p => {
       const [col, id] = p.split("/");
