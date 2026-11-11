@@ -60,10 +60,13 @@ export async function migrar() {
 
 // desde = última versão que a tela já tem; 0 = tudo (sem os excluídos).
 // A versão máxima é lida antes da lista: o que for gravado no meio vem de novo na próxima busca, sem perda.
+// A busca por mudanças repete o que foi alterado nos últimos 20 segundos: uma gravação pode pegar um número de
+// versão e só ser confirmada depois de outra com número maior; sem a repetição, ela nunca chegaria às telas
+// abertas. A tela ignora o que já tem na mesma versão.
 export async function listar(desde) {
   const versao = Number((await pool.query("select coalesce(max(versao), 0) as m from docs")).rows[0].m);
   const r = desde > 0
-    ? await pool.query("select colecao, id, dados, excluido, versao from docs where versao > $1 order by versao", [desde])
+    ? await pool.query("select colecao, id, dados, excluido, versao from docs where versao > $1 or atualizado > now() - interval '20 seconds' order by versao", [desde])
     : await pool.query("select colecao, id, dados, excluido, versao from docs where not excluido order by versao");
   return { versao, docs: r.rows.map(d => ({ ...d, versao: Number(d.versao) })) };
 }

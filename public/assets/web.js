@@ -1,12 +1,14 @@
 // Liga a tela do CrediControle (feita para o banco do claude.ai) à API deste servidor.
 // Implementa o mesmo pedaço da interface que a tela usa: collection().limit().onSnapshot e
-// doc().set/update/delete/onSnapshot. Busca mudanças a cada 4 s e recarrega tudo a cada 2 min.
+// doc().set/update/delete/onSnapshot. Busca mudanças a cada 4 s e confere tudo a cada 10 min.
 (function () {
   "use strict";
   const docs = {}, vers = {}, ouvintes = []; // vers = versão de cada documento, devolvida ao servidor em cada gravação
-  let versao = 0, eu = null, puxando = false, denovo = false;
+  let versao = 0, eu = null, puxando = false, denovo = null; // denovo: busca pedida enquanto outra estava em curso (true = completa)
   const copia = v => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-  const avisa = () => ouvintes.forEach(f => f());
+  // Avisa só quem acompanha as coleções que mudaram: cada aviso faz a tela copiar a coleção inteira e se redesenhar.
+  const avisa = cols => ouvintes.forEach(o => { if (cols.has(o.col)) o.f(); });
+  const ouve = (col, f) => { ouvintes.push({ col, f }); pronto.then(f); };
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   function toast(m) {
@@ -30,16 +32,28 @@
   }
 
   async function puxa(tudo) {
-    if (puxando) { denovo = true; return; }
+    if (puxando) { denovo = denovo || tudo; return; }
     puxando = true;
     try {
-      const j = await api("GET", "/api/dados" + (tudo ? "" : "?desde=" + versao));
-      if (tudo) for (const k in docs) { delete docs[k]; delete vers[k]; }
-      for (const d of j.docs) { const k = d.colecao + "/" + d.id; if (d.excluido) { delete docs[k]; delete vers[k]; } else { docs[k] = d.dados; vers[k] = d.versao; } }
+      const j = await api("GET", "/api/dados" + (tudo ? "" : "?desde=" + versao)), mudou = new Set();
+      if (tudo) {
+        // recarga completa: troca só o que está diferente do que a tela já tem (quase sempre, nada)
+        const novos = {};
+        for (const d of j.docs) novos[d.colecao + "/" + d.id] = d;
+        for (const k in docs) if (!novos[k]) { mudou.add(k.split("/")[0]); delete docs[k]; delete vers[k]; }
+        for (const k in novos) if (docs[k] === undefined || vers[k] !== novos[k].versao) { mudou.add(novos[k].colecao); docs[k] = novos[k].dados; vers[k] = novos[k].versao; }
+      } else {
+        for (const d of j.docs) {
+          const k = d.colecao + "/" + d.id;
+          if (d.excluido ? docs[k] === undefined : vers[k] === d.versao) continue; // já visto: o servidor repete as mudanças dos últimos segundos
+          mudou.add(d.colecao);
+          if (d.excluido) { delete docs[k]; delete vers[k]; } else { docs[k] = d.dados; vers[k] = d.versao; }
+        }
+      }
       versao = tudo ? j.versao : Math.max(versao, j.versao);
-      if (tudo || j.docs.length) avisa();
+      if (mudou.size) avisa(mudou);
     } catch (e) { console.warn("CrediControle:", e.message); }
-    finally { puxando = false; if (denovo) { denovo = false; puxa(false); } }
+    finally { puxando = false; if (denovo !== null) { const completa = denovo; denovo = null; puxa(completa); } }
   }
 
   const anota = (p, v) => { if (v) vers[p] = Math.max(vers[p] || 0, v); else delete vers[p]; };
@@ -48,9 +62,9 @@
   // baseou vai junto (If-Match): se outra pessoa gravou antes, o servidor recusa em vez de gravar por cima.
   async function escreve(metodo, col, id, corpo, local) {
     const p = col + "/" + id, base = metodo !== "DELETE" && vers[p] ? { "If-Match": String(vers[p]) } : {};
-    local(); avisa();
+    local(); avisa(new Set([col]));
     try { anota(p, (await api(metodo, `/api/doc/${col}/${encodeURIComponent(id)}`, corpo, base)).versao); }
-    catch (e) { toast("Não foi possível salvar: " + e.message); await puxa(true); throw e; }
+    catch (e) { delete vers[p]; toast("Não foi possível salvar: " + e.message); await puxa(true); throw e; } // sem versão, a recarga repõe o registro
     puxa(false);
   }
 
@@ -63,9 +77,9 @@
       if (o.op === "excluir") delete docs[p];
       else docs[p] = o.op === "mesclar" ? { ...(docs[p] || {}), ...copia(o.dados) } : copia(o.dados);
     }
-    avisa();
+    avisa(new Set(ops.map(o => o.col)));
     try { const j = await api("POST", "/api/lote", { ops: corpo }); ops.forEach((o, i) => anota(o.col + "/" + o.id, j.versoes[i])); }
-    catch (e) { toast("Não foi possível salvar: " + e.message); await puxa(true); throw e; }
+    catch (e) { ops.forEach(o => delete vers[o.col + "/" + o.id]); toast("Não foi possível salvar: " + e.message); await puxa(true); throw e; }
     puxa(false);
   }
 
@@ -73,11 +87,11 @@
   let pronto;
   const db = {
     lote,
-    collection: col => ({ limit: () => ({ onSnapshot: cb => { const f = () => cb(snapCol(col)); ouvintes.push(f); pronto.then(f); } }) }),
+    collection: col => ({ limit: () => ({ onSnapshot: cb => ouve(col, () => cb(snapCol(col))) }) }),
     doc: p => {
       const [col, id] = p.split("/");
       return {
-        onSnapshot: cb => { const f = () => cb({ exists: docs[p] !== undefined, data: () => copia(docs[p]) }); ouvintes.push(f); pronto.then(f); },
+        onSnapshot: cb => ouve(col, () => cb({ exists: docs[p] !== undefined, data: () => copia(docs[p]) })),
         set: v => escreve("PUT", col, id, v, () => { docs[p] = copia(v); }),
         update: v => escreve("PATCH", col, id, v, () => { docs[p] = { ...(docs[p] || {}), ...copia(v) }; }),
         delete: () => escreve("DELETE", col, id, null, () => { delete docs[p]; }),
@@ -100,7 +114,7 @@
     await puxa(true);
   })();
   setInterval(() => puxa(false), 4000);
-  setInterval(() => puxa(true), 120000);
+  setInterval(() => puxa(true), 600000); // rede de segurança: confere tudo a cada 10 minutos
   document.addEventListener("visibilitychange", () => { if (!document.hidden) puxa(false); });
 
   // Rodapé do menu: usuário, link público de pré-cadastro, administração (só admin), senha e sair.

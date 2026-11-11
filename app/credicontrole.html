@@ -217,8 +217,16 @@ const quitadaP=p=>!!p.quitada;
 /* saldo:inicio — modalidade "saldo devedor": juros simples por dia corrido (taxa mensal ÷ 30) sobre o saldo,
    desde a última movimentação; cada pagamento quita primeiro os juros do período e o resto abate o saldo.
    Juros não pagos ficam no saldo e passam a render juros no movimento seguinte. */
+// O extrato de um contrato numa data é pedido muitas vezes a cada redesenho da tela; fica guardado por contrato.
+// Os objetos de contrato são trocados por novos a cada mudança (nunca alterados no lugar), então o guardado se renova.
+const extratos=new WeakMap();
 function extrato(c,ref){
   ref=ref||today();
+  let m=extratos.get(c);if(!m)extratos.set(c,m=new Map());
+  if(!m.has(ref))m.set(ref,calculaExtrato(c,ref));
+  return m.get(ref);
+}
+function calculaExtrato(c,ref){
   const td=(+c.taxa)/100/30;
   const movs=[...(c.movimentos||[])].sort((a,b)=>a.data.localeCompare(b.data)||String(a.criadoEm||"").localeCompare(String(b.criadoEm||"")));
   let saldo=r2(c.valor),ult=c.dataContrato,pago=0,jurosPagos=0,capitalPago=0;
@@ -245,10 +253,15 @@ function statusC(c){
 }
 const STP={ativo:["Em dia","ok"],atrasado:["Em atraso","bad"],quitado:["Quitado",""],cancelado:["Cancelado",""]};
 const pillC=c=>{const [t,k]=STP[statusC(c)];return `<span class="pill ${k}">${t}</span>`};
-const cli=id=>S.clientes.find(x=>x.id===id)||{nome:"(cliente removido)"};
+// Índice de clientes por id, refeito só quando a lista muda (as listas procuram o cliente de cada linha).
+let cliIdx={l:null,m:null};
+const cli=id=>{if(cliIdx.l!==S.clientes)cliIdx={l:S.clientes,m:new Map(S.clientes.map(x=>[x.id,x]))};return cliIdx.m.get(id)||{nome:"(cliente removido)"}};
 const ex=o=>o&&o.exemplo?'<span class="ex">exemplo</span>':"";
-function abertas(){ // todas as parcelas em aberto com contexto
+let abMemo={}; // a lista de parcelas em aberto é pedida várias vezes por redesenho: vale até contratos, config ou o dia mudarem
+function abertas(){ // todas as parcelas em aberto com contexto (quem usa não altera a lista devolvida)
   const out=[],t=today();
+  if(abMemo.c===S.contratos&&abMemo.g===S.config&&abMemo.t===t)return abMemo.v;
+  abMemo={c:S.contratos,g:S.config,t,v:out};
   for(const c of S.contratos){if(c.cancelado)continue;
     if(isSaldo(c)){ // uma "parcela" só: o saldo de hoje; a receber no vencimento = saldo com os juros até lá
       const x=extrato(c);if(x.quitado)continue;
@@ -324,9 +337,23 @@ const short=v=>v>=1e6?"R$ "+(v/1e6).toLocaleString("pt-BR",{maximumFractionDigit
 
 /* ---------- views ---------- */
 const TITLES={dashboard:"Painel",precadastro:"Pré-cadastro",clientes:"Clientes",contratos:"Contratos",inadimplentes:"Inadimplentes",cobrancas:"Cobranças",caixa:"Caixa e transações",ajustes:"Configurações"};
-const ui={cliQ:"",cliSt:"todos",conQ:"",conSt:"todos",cobTab:"lembretes",cxMes:today().slice(0,7)};
+const LOTE_LINHAS=200; // listas longas mostram as primeiras linhas e um botão "mostrar mais": desenhar milhares trava a tela
+const ui={cliQ:"",cliSt:"todos",conQ:"",conSt:"todos",cobTab:"lembretes",cxMes:today().slice(0,7),cliMax:LOTE_LINHAS,conMax:LOTE_LINHAS};
+function corta(list,chave){
+  const tot=list.length,lim=ui[chave];
+  return {vis:tot>lim?list.slice(0,lim):list,resto:tot>lim?`<div class="empty" style="padding:14px 20px">Mostrando ${lim} de ${tot}. <button class="sm" data-act="mais" data-k="${chave}">Mostrar mais ${LOTE_LINHAS}</button> Ou refine a busca.</div>`:""};
+}
+// Contratos de cada cliente, indexados uma vez por mudança (a lista de clientes consulta isso em cada linha).
+let conIdx={l:null,m:null};
+function conDe(id){
+  if(conIdx.l!==S.contratos){const m=new Map();for(const k of S.contratos){const a=m.get(k.clienteId);a?a.push(k):m.set(k.clienteId,[k])}conIdx={l:S.contratos,m}}
+  return conIdx.m.get(id)||[];
+}
 
-function render(){
+// Vários pedidos de redesenho seguidos (uma mudança que atinge contratos e caixa, por exemplo) viram um só.
+let renderPedido=false;
+function render(){if(renderPedido)return;renderPedido=true;queueMicrotask(()=>{renderPedido=false;renderAgora()})}
+function renderAgora(){
   if(!(S.loaded.clientes&&S.loaded.contratos&&S.loaded.transacoes&&S.loaded.config))return;
   $("#brandName").textContent=cfg("nome");
   document.querySelectorAll("#nav a").forEach(a=>a.classList.toggle("on",a.dataset.v===view));
@@ -391,15 +418,16 @@ function kpi(l,v,s,cls="",go="",tab=""){return `<div class="kpi ${cls}" ${go?`da
 
 function cliRows(list){
   if(!list.length)return `<div class="empty"><b>Nenhum cliente aqui</b>Use “Novo cliente” para cadastrar o primeiro.</div>`;
-  return `<div class="tbl"><table><thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Situação</th><th class="num">Contratos</th><th class="num">Saldo devedor</th></tr></thead><tbody>${list.map(c=>{
-    const cs=S.contratos.filter(k=>k.clienteId===c.id&&!k.cancelado),sd=cs.reduce((a,k)=>a+saldoContrato(k),0),at=cs.some(k=>statusC(k)==="atrasado");
+  const {vis,resto}=corta(list,"cliMax");
+  return `<div class="tbl"><table><thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Situação</th><th class="num">Contratos</th><th class="num">Saldo devedor</th></tr></thead><tbody>${vis.map(c=>{
+    const cs=conDe(c.id).filter(k=>!k.cancelado),sd=cs.reduce((a,k)=>a+saldoContrato(k),0),at=cs.some(k=>statusC(k)==="atrasado");
     const st=c.status==="pre"?'<span class="pill warn">Pré-cadastro</span>':c.status==="bloqueado"?'<span class="pill bad">Bloqueado</span>':at?'<span class="pill bad">Em atraso</span>':'<span class="pill ok">Ativo</span>';
-    return `<tr class="click" data-act="verCliente" data-id="${c.id}"><td><b>${esc(c.nome)}</b>${ex(c)}</td><td>${esc(c.cpf||"—")}</td><td>${esc(c.telefone||"—")}</td><td>${st}</td><td class="num">${cs.length}</td><td class="num">${money(sd)}</td></tr>`}).join("")}</tbody></table></div>`;
+    return `<tr class="click" data-act="verCliente" data-id="${c.id}"><td><b>${esc(c.nome)}</b>${ex(c)}</td><td>${esc(c.cpf||"—")}</td><td>${esc(c.telefone||"—")}</td><td>${st}</td><td class="num">${cs.length}</td><td class="num">${money(sd)}</td></tr>`}).join("")}</tbody></table></div>${resto}`;
 }
 VIEWS.clientes=()=>{
   const q=ui.cliQ.toLowerCase();
   let l=S.clientes.filter(c=>c.status!=="pre").filter(c=>!q||[c.nome,c.cpf,c.telefone].join(" ").toLowerCase().includes(q));
-  if(ui.cliSt==="atraso")l=l.filter(c=>S.contratos.some(k=>k.clienteId===c.id&&statusC(k)==="atrasado"));
+  if(ui.cliSt==="atraso")l=l.filter(c=>conDe(c.id).some(k=>statusC(k)==="atrasado"));
   if(ui.cliSt==="bloqueado")l=l.filter(c=>c.status==="bloqueado");
   l.sort((a,b)=>a.nome.localeCompare(b.nome));
   return `<div class="toolbar"><input type="search" id="cliQ" placeholder="Buscar por nome, CPF ou telefone" value="${esc(ui.cliQ)}" aria-label="Buscar clientes"><div class="tabs">${tabs("cliSt",{todos:"Todos",atraso:"Em atraso",bloqueado:"Bloqueados"})}</div></div><section class="panel">${cliRows(l)}</section>`;
@@ -411,7 +439,8 @@ VIEWS.precadastro=()=>{
 function tabs(key,opts){return Object.entries(opts).map(([k,l])=>`<button class="sm ${ui[key]===k?"on":""}" data-act="tab" data-k="${key}" data-v="${k}">${l}</button>`).join("")}
 function conRows(list){
   if(!list.length)return `<div class="empty"><b>Nenhum contrato aqui</b>Use “Novo contrato” para registrar um empréstimo.</div>`;
-  return `<div class="tbl"><table><thead><tr><th>Cliente</th><th>Início</th><th>Modalidade</th><th class="num">Emprestado</th><th class="num">Taxa</th><th class="num">Pagas</th><th class="num">Saldo</th><th>Situação</th></tr></thead><tbody>${list.map(c=>{const ps=c.parcelas||[];return `<tr class="click" data-act="verContrato" data-id="${c.id}"><td><b>${esc(cli(c.clienteId).nome)}</b>${ex(c)}</td><td>${fdate(c.dataContrato)}</td><td>${MOD[c.modalidade]||""}<div class="muted">${isSaldo(c)?"vence "+fdate(c.vencimento):PER[c.periodicidade]}</div></td><td class="num">${money(c.valor)}</td><td class="num">${(+c.taxa).toLocaleString("pt-BR")}%${isSaldo(c)?" a.m.":""}</td><td class="num">${isSaldo(c)?(c.movimentos||[]).length+" pgto":ps.filter(quitadaP).length+"/"+ps.length}</td><td class="num">${money(saldoContrato(c))}</td><td>${pillC(c)}${c.inad&&!["quitado","cancelado"].includes(statusC(c))?' <span class="pill bad">Inadimplente</span>':""}</td></tr>`}).join("")}</tbody></table></div>`;
+  const {vis,resto}=corta(list,"conMax");
+  return `<div class="tbl"><table><thead><tr><th>Cliente</th><th>Início</th><th>Modalidade</th><th class="num">Emprestado</th><th class="num">Taxa</th><th class="num">Pagas</th><th class="num">Saldo</th><th>Situação</th></tr></thead><tbody>${vis.map(c=>{const ps=c.parcelas||[];return `<tr class="click" data-act="verContrato" data-id="${c.id}"><td><b>${esc(cli(c.clienteId).nome)}</b>${ex(c)}</td><td>${fdate(c.dataContrato)}</td><td>${MOD[c.modalidade]||""}<div class="muted">${isSaldo(c)?"vence "+fdate(c.vencimento):PER[c.periodicidade]}</div></td><td class="num">${money(c.valor)}</td><td class="num">${(+c.taxa).toLocaleString("pt-BR")}%${isSaldo(c)?" a.m.":""}</td><td class="num">${isSaldo(c)?(c.movimentos||[]).length+" pgto":ps.filter(quitadaP).length+"/"+ps.length}</td><td class="num">${money(saldoContrato(c))}</td><td>${pillC(c)}${c.inad&&!["quitado","cancelado"].includes(statusC(c))?' <span class="pill bad">Inadimplente</span>':""}</td></tr>`}).join("")}</tbody></table></div>${resto}`;
 }
 VIEWS.contratos=()=>{
   const q=ui.conQ.toLowerCase();
@@ -712,7 +741,8 @@ document.addEventListener("click",async e=>{
   e.stopPropagation();
   switch(act){
     case"close":closeTop();break;
-    case"tab":ui[a.dataset.k]=a.dataset.v;render();break;
+    case"tab":ui[a.dataset.k]=a.dataset.v;ui.cliMax=ui.conMax=LOTE_LINHAS;render();break;
+    case"mais":ui[a.dataset.k]+=LOTE_LINHAS;render();break;
     case"go":if(a.dataset.tab)ui.cobTab=a.dataset.tab;location.hash=a.dataset.go;break;
     case"novoCliente":formCliente(null,!!a.dataset.pre);break;
     case"editCliente":formCliente(S.clientes.find(x=>x.id===id));break;
@@ -741,7 +771,7 @@ document.addEventListener("click",async e=>{
 document.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches(".kpi[data-act]")){e.preventDefault();e.target.click()}});
 document.addEventListener("input",e=>{
   const t=e.target;
-  if(t.id==="cliQ"||t.id==="conQ"){ui[t.id]=t.value;focusId=t.id;focusPos=t.selectionStart;render();}
+  if(t.id==="cliQ"||t.id==="conQ"){ui[t.id]=t.value;ui.cliMax=ui.conMax=LOTE_LINHAS;focusId=t.id;focusPos=t.selectionStart;render();}
   if(t.id==="cxMes"&&t.value){ui.cxMes=t.value;render()}
 });
 document.addEventListener("submit",async e=>{

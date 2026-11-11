@@ -152,8 +152,29 @@ pg_dump "$DATABASE_URL" > backup-$(date +%F).sql
 ```
 Faça isso pelo menos uma vez por semana. Os planos pagos da Render e do Neon também têm backup automático.
 
+## Teste de volume
+
+Medido em 10/11/2026 num banco local de teste com dados fictícios (o banco embutido, não o Postgres de produção):
+
+| Carteira | Abrir uma tela | Buscar na lista | Uma alteração (redesenho) | Carga completa dos dados |
+|---|---|---|---|---|
+| 350 contratos (1.900 registros) | 6 a 34 ms | — | 28 ms | 0,8 MB em 0,16 s |
+| 3.500 contratos (20.500 registros) | 12 a 41 ms | 15 ms | 114 ms | 8,4 MB em 1 s |
+
+As listas de Contratos e Clientes mostram 200 linhas por vez ("Mostrar mais"). A tela busca mudanças a cada 4
+segundos (12 ms quando não há nada novo) e confere tudo a cada 10 minutos.
+
+Para repetir, com o servidor apontando para a mesma pasta:
+
+```bash
+PGLITE_DIR=/caminho/de/teste/banco node testes/semeia-volume.js 350 2800   # ativos e quitados; recusa rodar com DATABASE_URL
+```
+
+O script cria o usuário `volume@teste.local` e grava a senha em `login-volume.txt`, ao lado da pasta do banco.
+
 ## Ainda não feito
 
+- **Restaurar a cópia de segurança:** o sistema baixa a cópia, mas ainda não tem como carregá-la de volta.
 - **Importador CSV** do sistema atual (aguardando os arquivos exportados).
 - Envio de foto do documento no pré-cadastro.
 - Franquias com permissão separada (hoje todo usuário vê a carteira inteira).
