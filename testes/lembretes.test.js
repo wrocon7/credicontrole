@@ -64,7 +64,8 @@ try {
   await grava("contratos", "k3", saldo("c3", amanha));                                    // cliente não quer
   await grava("contratos", "k4", parcela("c4", 300)); // sem celular
   await grava("contratos", "k5", saldo("c1", k.addDays(hoje, 5)));                        // fora dos dias configurados
-  await grava("contratos", "k6", saldo("c1", amanha, { cancelado: true }));               // cancelado
+  await grava("contratos", "k6", saldo("c1", amanha, { cancelado: true }));
+  await grava("contratos", "k8", saldo("c1", amanha, { pendente: true }));                // aguardando o Pix: ainda não vale               // cancelado
   await grava("contratos", "k7", parcela("c1", 200, { quitada: true })); // já pago
 
   const desligado = await chama("POST", "/api/tarefas/lembretes", null, { Authorization: `Bearer ${CRON}` });
@@ -98,7 +99,7 @@ try {
 
   const pre = { nome: "Eva Rocha Teste", cpf: "529.982.247-25", rg: "7654321 SPTC/ES", telefone: "(27) 99999-5555", aceite: true,
     cep: "29160161", logradouro: "Rua A", numero: "1", bairro: "Centro", cidade: "Serra", uf: "ES",
-    empresa: "Loja X", enderecoTrabalho: "Rua B, 2, Centro, Serra", ref1Nome: "Ana", ref1Parentesco: "Mãe", ref1Telefone: "27988887777" };
+    empresa: "Loja X", enderecoTrabalho: "Rua B, 2, Centro, Serra", ref1Nome: "Ana", ref1Parentesco: "Mãe", ref1Telefone: "27988887777", ref2Nome: "Rui", ref2Parentesco: "Pai", ref2Telefone: "27977776666", tempoRegistro: "1 ano", renda: "2000" };
   await chama("POST", "/api/publico/precadastro", { ...pre, aceitaWhatsapp: true });
   await chama("POST", "/api/publico/precadastro", pre);
   const pres = ((await chama("GET", "/api/dados", null, adm)).json?.docs || []).filter(d => d.dados.origem === "link").map(d => d.dados.semLembrete);

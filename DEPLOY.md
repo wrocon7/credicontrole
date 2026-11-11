@@ -71,6 +71,21 @@ a pasta com o app parado.
    franquia, acrescente `?f=NOME` no fim do link.
 5. Apague os dados de teste, se tiver usado o banco embutido para testar.
 
+## Rotas, operadores e confirmação do Pix
+
+- **Rotas:** cadastre os nomes em **Configurações → Rotas** (ex.: `Rota 1, Rota 2, Rota 3`). Em **Usuários**, ligue cada
+  operador a uma rota. Na ficha do cliente, o administrador escolhe a rota; cliente criado pelo operador cai na rota dele.
+- **O que o operador vê:** por inteiro, só os clientes, contratos e pagamentos da própria rota. Em Clientes → "Todas as
+  rotas" aparecem os das outras rotas só com nome, identidade, rota e se está ativo. O servidor não entrega o resto.
+- **Contrato lançado pelo operador** fica **Aguardando Pix**: não entra no painel, nas cobranças nem nos lembretes, e
+  não recebe pagamento. O administrador abre o contrato e clica em **Confirmar Pix** (informa a data): o contrato passa
+  a valer nessa data e a saída entra no caixa. Contrato criado pelo administrador já nasce ativo.
+- **Baixa:** por padrão só o administrador registra recebimentos. Para liberar os operadores, marque
+  "Operadores podem registrar recebimentos" em Configurações. Excluir e estornar continuam só do administrador.
+- **Link de pré-cadastro por rota:** o operador copia a mensagem com `?f=<rota>` no link, e o pré-cadastro já cai na rota.
+- **Valor da parcela:** no novo contrato (parcelado, Price e só juros) dá para digitar o valor da parcela; a taxa é
+  recalculada e fica gravada no contrato.
+
 ## Segurança
 
 - **Papéis:** o *operador* cadastra clientes, cria contratos, acrescenta pagamentos, renegocia vencimento e marca

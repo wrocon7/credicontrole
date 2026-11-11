@@ -12,15 +12,16 @@
 <main class="page">
   <p><a href="/" style="color:var(--accent)">← Voltar ao sistema</a></p>
   <h1>Usuários</h1>
-  <p class="muted" style="margin-top:0">Quem pode entrar no sistema. Administradores também gerenciam esta lista.</p>
+  <p class="muted" style="margin-top:0">Quem pode entrar no sistema. O operador vê por inteiro só os clientes da rota dele; das outras rotas, só nome, identidade e situação. Administradores veem tudo e gerenciam esta lista.</p>
   <div id="erro" class="erro" hidden></div>
-  <section class="card"><div class="tbl"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Situação</th><th></th></tr></thead><tbody id="lista"></tbody></table></div></section>
+  <section class="card"><div class="tbl"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Rota</th><th>Situação</th><th></th></tr></thead><tbody id="lista"></tbody></table></div></section>
   <section class="card"><h2>Novo usuário</h2>
     <form id="f" class="form">
       <label class="f s3">Nome<input name="nome" required></label>
       <label class="f s3">E-mail<input name="email" type="email" required></label>
       <label class="f s3">Senha inicial (8+ caracteres)<input name="senha" type="password" minlength="8" required autocomplete="new-password"></label>
       <label class="f s3">Papel<select name="papel"><option value="operador">Operador</option><option value="admin">Administrador</option></select></label>
+      <label class="f">Rota do operador<input name="rota" placeholder="Ex.: Rota 1 (igual à cadastrada em Configurações)"></label>
       <button class="pri" type="submit">Cadastrar usuário</button>
     </form>
   </section>
@@ -38,15 +39,16 @@ async function api(m, url, corpo) {
 const mostra = m => { erro.textContent = m; erro.hidden = !m; };
 async function carrega() {
   const us = await api("GET", "/api/usuarios");
-  document.getElementById("lista").innerHTML = us.map(u => `<tr><td><b>${esc(u.nome)}</b></td><td>${esc(u.email)}</td><td>${u.papel === "admin" ? "Administrador" : "Operador"}</td>
+  document.getElementById("lista").innerHTML = us.map(u => `<tr><td><b>${esc(u.nome)}</b></td><td>${esc(u.email)}</td><td>${u.papel === "admin" ? "Administrador" : "Operador"}</td><td>${u.papel === "admin" ? "—" : esc(u.rota || "sem rota")}</td>
     <td>${u.ativo ? '<span class="pill ok">Ativo</span>' : '<span class="pill">Desativado</span>'}${u.ativo && u.trocar_senha ? ' <span class="pill">vai trocar a senha</span>' : ""}</td>
-    <td style="white-space:nowrap"><button class="sm" data-a="ativo" data-id="${u.id}" data-v="${!u.ativo}">${u.ativo ? "Desativar" : "Reativar"}</button> <button class="sm" data-a="senha" data-id="${u.id}">Nova senha</button></td></tr>`).join("");
+    <td style="white-space:nowrap"><button class="sm" data-a="ativo" data-id="${u.id}" data-v="${!u.ativo}">${u.ativo ? "Desativar" : "Reativar"}</button> <button class="sm" data-a="senha" data-id="${u.id}">Nova senha</button>${u.papel === "admin" ? "" : ` <button class="sm" data-a="rota" data-id="${u.id}" data-v="${esc(u.rota || "")}">Rota</button>`}</td></tr>`).join("");
 }
 document.getElementById("lista").onclick = async e => {
   const b = e.target.closest("button"); if (!b) return;
   try {
     mostra("");
-    if (b.dataset.a === "ativo") await api("PATCH", "/api/usuarios/" + b.dataset.id, { ativo: b.dataset.v === "true" });
+    if (b.dataset.a === "rota") { const r = prompt("Rota deste operador (igual à cadastrada em Configurações; vazio para tirar):", b.dataset.v); if (r === null) return; await api("PATCH", "/api/usuarios/" + b.dataset.id, { rota: r }); }
+    else if (b.dataset.a === "ativo") await api("PATCH", "/api/usuarios/" + b.dataset.id, { ativo: b.dataset.v === "true" });
     else { const s = prompt("Senha provisória (8+ caracteres). A pessoa vai trocar no próximo acesso:"); if (!s) return; await api("PATCH", "/api/usuarios/" + b.dataset.id, { senha: s }); alert("Senha provisória definida. Os logins abertos dessa pessoa foram encerrados."); }
     await carrega();
   } catch (x) { mostra(x.message); }

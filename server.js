@@ -134,7 +134,7 @@ app.post("/api/login", assincrono(async (req, res) => {
   res.json({ ok: true, trocarSenha: u.trocar_senha });
 }));
 app.post("/api/logout", (req, res) => { res.clearCookie("cc_sessao", { path: "/" }); res.json({ ok: true }); });
-app.get("/api/eu", exige(null, true), (req, res) => res.json({ id: req.u.id, nome: req.u.nome, email: req.u.email, papel: req.u.papel, trocarSenha: req.u.trocar_senha }));
+app.get("/api/eu", exige(null, true), (req, res) => res.json({ id: req.u.id, nome: req.u.nome, email: req.u.email, papel: req.u.papel, rota: req.u.rota || "", trocarSenha: req.u.trocar_senha }));
 const trocas = limitador(10, 15 * 60e3);
 app.post("/api/minha-senha", exige(null, true), assincrono(async (req, res) => {
   const atual = String(req.body?.atual || ""), nova = String(req.body?.nova || "");
@@ -149,7 +149,45 @@ app.post("/api/minha-senha", exige(null, true), assincrono(async (req, res) => {
 }));
 
 /* ---------- dados da carteira ---------- */
-app.get("/api/dados", exige(), assincrono(async (req, res) => res.json(await db.listar(Math.max(0, +req.query.desde || 0)))));
+// O operador recebe por inteiro só o que é da própria rota. Dos clientes das outras rotas vem um resumo (nome,
+// identidade, rota e se está ativo); contratos, pagamentos e caixa das outras rotas não saem do servidor.
+async function visaoDoOperador(u, lista, completa) {
+  const rotas = await db.rotasDosClientes(), minha = id => !!u.rota && rotas.get(id) === u.rota;
+  const some = d => (completa ? null : { colecao: d.colecao, id: d.id, dados: {}, excluido: true, versao: d.versao });
+  return lista.map(d => {
+    if (d.excluido || d.colecao === "config") return d;
+    if (d.colecao === "clientes") {
+      if (minha(d.id)) return d;
+      if (d.dados.status === "pre") return some(d);
+      return { ...d, dados: { nome: d.dados.nome, rg: d.dados.rg || "", rota: d.dados.rota || "", status: d.dados.status === "bloqueado" ? "inativo" : "ativo", _resumo: true } };
+    }
+    return d.dados.clienteId && minha(d.dados.clienteId) ? d : some(d);
+  }).filter(Boolean);
+}
+app.get("/api/dados", exige(), assincrono(async (req, res) => {
+  const desde = Math.max(0, +req.query.desde || 0), r = await db.listar(desde);
+  if (req.u.papel !== "admin") r.docs = await visaoDoOperador(req.u, r.docs, desde === 0);
+  res.json(r);
+}));
+const opcoesDe = async u => (u.papel === "admin" ? {} : { operadorRecebe: !!(await db.ler("config", "geral"))?.operadorRecebe });
+
+// Limites do operador que dependem de outros registros: só mexe em cliente da própria rota, e o contrato que ele
+// lança nasce pendente, até o administrador confirmar o Pix. Devolve o motivo da recusa, ou null.
+async function limitesDoOperador(q, u, op, col, antes, novo) {
+  if (u.papel === "admin" || col === "config") return null;
+  if (!u.rota) return "Seu usuário ainda não tem rota. Peça ao administrador.";
+  if (col === "clientes") {
+    if (antes && (antes.rota || "") !== u.rota) return "Este cliente é de outra rota.";
+    if (antes && novo && (novo.rota || "") !== u.rota) return "Só o administrador muda a rota de um cliente.";
+    if (!antes && novo) novo.rota = u.rota;
+    return null;
+  }
+  const cliente = (novo || antes)?.clienteId;
+  if (!cliente) return "Só o administrador faz lançamentos sem cliente.";
+  if (((await db.lerDoc("clientes", cliente, q))?.dados.rota || "") !== u.rota) return "Este cliente é de outra rota.";
+  if (col === "contratos" && !antes && novo) { novo.pendente = true; novo.lancadoPor = u.nome; }
+  return null;
+}
 
 // Guarda só os campos que mudaram.
 function diferenca(antes, depois) {
@@ -167,14 +205,14 @@ const recusa = (status, erro) => Object.assign(new Error(erro), { status, erro }
 const OPERACOES = ["gravar", "mesclar", "excluir"];
 
 // Uma gravação, dentro da transação `q`: confere versão, permissão e formato, e grava. Lança `recusa` se não puder.
-async function aplica(q, u, { op, col, id, dados, base }) {
+async function aplica(q, u, { op, col, id, dados, base }, opc = {}) {
   if (!OPERACOES.includes(op) || !db.COLECOES.has(col) || !/^[A-Za-z0-9_.-]{1,120}$/.test(id)) throw recusa(400, "Documento inválido.");
   if (op !== "excluir" && (!dados || typeof dados !== "object" || Array.isArray(dados))) throw recusa(400, "Dados inválidos.");
   const atual = await db.lerDoc(col, id, q), antes = atual?.dados ?? null;
   if (base && atual?.versao !== base) throw recusa(409, CONFLITO);
   if (op === "mesclar" && !antes) throw recusa(404, "Documento não encontrado.");
   const novo = op === "excluir" ? null : op === "mesclar" ? { ...antes, ...dados } : dados;
-  const motivo = proibido(u, op, col, antes, novo);
+  const motivo = (await limitesDoOperador(q, u, op, col, antes, novo)) || proibido(u, op, col, antes, novo, opc);
   if (motivo) throw recusa(403, motivo);
   const problema = novo && invalido(col, id, novo);
   if (problema) throw recusa(400, problema);
@@ -197,7 +235,8 @@ const respondeRecusa = (e, res) => { if (!e.status) throw e; res.status(e.status
 
 const escrita = op => assincrono(async (req, res) => {
   try {
-    const f = await db.emTransacao(q => aplica(q, req.u, { op, col: req.params.col, id: req.params.id, dados: req.body, base: +req.headers["if-match"] || null }));
+    const opc = await opcoesDe(req.u);
+    const f = await db.emTransacao(q => aplica(q, req.u, { op, col: req.params.col, id: req.params.id, dados: req.body, base: +req.headers["if-match"] || null }, opc));
     registra(req, f);
     res.json({ ok: true, versao: f.versao });
   } catch (e) { respondeRecusa(e, res); }
@@ -211,9 +250,10 @@ app.post("/api/lote", exige(), assincrono(async (req, res) => {
   const ops = req.body?.ops;
   if (!Array.isArray(ops) || !ops.length || ops.length > 400 || ops.some(o => !o || typeof o !== "object")) return res.status(400).json({ erro: "Lote inválido." });
   try {
+    const opc = await opcoesDe(req.u);
     const feitos = await db.emTransacao(async q => {
       const lista = [];
-      for (const o of ops) lista.push(await aplica(q, req.u, { op: o.op, col: String(o.col), id: String(o.id), dados: o.dados, base: +o.base || null }));
+      for (const o of ops) lista.push(await aplica(q, req.u, { op: o.op, col: String(o.col), id: String(o.id), dados: o.dados, base: +o.base || null }, opc));
       return lista;
     });
     feitos.forEach(f => registra(req, f));
@@ -223,7 +263,8 @@ app.post("/api/lote", exige(), assincrono(async (req, res) => {
 
 /* ---------- administração ---------- */
 const PAPEIS = ["admin", "operador"];
-const resumoUsuario = u => ({ nome: u.nome, email: u.email, papel: u.papel, ativo: u.ativo });
+const resumoUsuario = u => ({ nome: u.nome, email: u.email, papel: u.papel, ativo: u.ativo, rota: u.rota || "" });
+const rotaDe = v => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, 30);
 app.get("/api/usuarios", exige("admin"), assincrono(async (req, res) => res.json(await db.usuarios.listar())));
 app.post("/api/usuarios", exige("admin"), assincrono(async (req, res) => {
   const nome = String(req.body?.nome || "").trim(), email = String(req.body?.email || "").trim().toLowerCase();
@@ -231,8 +272,9 @@ app.post("/api/usuarios", exige("admin"), assincrono(async (req, res) => {
   if (!nome || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ erro: "Informe nome e e-mail válidos." });
   if (!senhaValida(senha)) return res.status(400).json({ erro: ERRO_SENHA });
   try {
-    const id = await db.usuarios.criar({ email, nome: nome.slice(0, 120), senha: await hashSenha(senha), papel });
-    audita(req, { acao: "usuario_criado", colecao: "usuarios", id: String(id), depois: { nome, email, papel } });
+    const rota = papel === "admin" ? "" : rotaDe(req.body?.rota);
+    const id = await db.usuarios.criar({ email, nome: nome.slice(0, 120), senha: await hashSenha(senha), papel, rota });
+    audita(req, { acao: "usuario_criado", colecao: "usuarios", id: String(id), depois: { nome, email, papel, rota } });
     res.json({ id });
   } catch (e) {
     if (e.code === "23505") return res.status(409).json({ erro: "Já existe um usuário com esse e-mail." });
@@ -246,6 +288,7 @@ app.patch("/api/usuarios/:id", exige("admin"), assincrono(async (req, res) => {
   if (typeof b.ativo === "boolean") campos.ativo = b.ativo;
   if (PAPEIS.includes(b.papel)) campos.papel = b.papel;
   if (typeof b.nome === "string" && b.nome.trim()) campos.nome = b.nome.trim().slice(0, 120);
+  if (typeof b.rota === "string") campos.rota = rotaDe(b.rota);
   if (b.senha !== undefined) {
     if (!senhaValida(String(b.senha))) return res.status(400).json({ erro: ERRO_SENHA });
     campos.senha = await hashSenha(String(b.senha));
@@ -314,13 +357,16 @@ app.post("/api/publico/precadastro", assincrono(async (req, res) => {
   const num = v => { const x = parseFloat(String(v ?? "").replace(/\./g, "").replace(",", ".")); return x > 0 ? Math.round(x * 100) / 100 : null; };
   const d = { nome: M(b.nome), cpf: t(b.cpf, 20).replace(/\D/g, ""), rg: M(b.rg, 30), telefone: t(b.telefone, 30),
     cep: t(b.cep, 9).replace(/\D/g, ""), logradouro: M(b.logradouro), numero: M(b.numero, 20), bairro: M(b.bairro, 80), cidade: M(b.cidade, 80), uf: M(b.uf, 2),
-    empresa: M(b.empresa), enderecoTrabalho: M(b.enderecoTrabalho, 200), ref1Nome: M(b.ref1Nome, 80), ref1Parentesco: M(b.ref1Parentesco, 40), ref1Telefone: t(b.ref1Telefone, 30) };
+    empresa: M(b.empresa), enderecoTrabalho: M(b.enderecoTrabalho, 200), ref1Nome: M(b.ref1Nome, 80), ref1Parentesco: M(b.ref1Parentesco, 40), ref1Telefone: t(b.ref1Telefone, 30),
+    ref2Nome: M(b.ref2Nome, 80), ref2Parentesco: M(b.ref2Parentesco, 40), ref2Telefone: t(b.ref2Telefone, 30), tempoRegistro: t(b.tempoRegistro, 40), renda: num(b.renda) };
   const digitos = v => v.replace(/\D/g, "").length;
   const faltam = [
     [d.nome.length >= 5 && d.nome.includes(" "), "nome completo"], [cpfValido(d.cpf), "CPF válido"], [d.rg.replace(/[^0-9A-Z]/g, "").length >= 5, "RG"],
     [digitos(d.telefone) >= 10, "telefone com DDD"], [d.cep.length === 8, "CEP"], [d.logradouro, "rua"], [d.numero, "número"], [d.bairro, "bairro"],
     [d.cidade, "cidade"], [/^[A-Z]{2}$/.test(d.uf), "UF"], [d.empresa, "nome da empresa"], [d.enderecoTrabalho.length >= 8, "endereço do local de trabalho"],
     [d.ref1Nome, "nome do contato de referência"], [d.ref1Parentesco, "parentesco do contato"], [digitos(d.ref1Telefone) >= 10, "telefone do contato"],
+    [d.ref2Nome, "nome do 2º contato"], [d.ref2Parentesco, "parentesco do 2º contato"], [digitos(d.ref2Telefone) >= 10, "telefone do 2º contato"],
+    [d.tempoRegistro, "tempo de carteira"], [d.renda > 0, "renda mensal"],
   ].filter(([ok]) => !ok).map(([, rotulo]) => rotulo);
   if (faltam.length) return res.status(400).json({ erro: `Preencha: ${faltam.join(", ")}.`, faltam });
   if (b.aceite !== true) return res.status(400).json({ erro: "É preciso concordar com o uso dos dados." });
@@ -328,14 +374,17 @@ app.post("/api/publico/precadastro", assincrono(async (req, res) => {
 
   const cep = d.cep.replace(/(\d{5})(\d{3})/, "$1-$2"), nome = d.nome, cpf = d.cpf;
   const endereco = [`${d.logradouro}, ${d.numero}`, d.bairro, `${d.cidade}/${d.uf}`, cep].join(" · ");
-  const referencias = [[d.ref1Nome, d.ref1Parentesco, d.ref1Telefone], [M(b.ref2Nome, 80), M(b.ref2Parentesco, 40), t(b.ref2Telefone, 30)]]
+  const referencias = [[d.ref1Nome, d.ref1Parentesco, d.ref1Telefone], [d.ref2Nome, d.ref2Parentesco, d.ref2Telefone]]
     .filter(([n, , f]) => n || f).map(([n, p, f]) => `${n}${p ? ` (${p})` : ""}${f ? ` — ${telefoneBR(f)}` : ""}`).join("\n");
+  // o link pode trazer a rota (?f=Rota 1): o pré-cadastro já cai nela, se for uma das rotas cadastradas em Configurações
+  const rotasCfg = String(((await db.ler("config", "geral")) || {}).rotas || "").split(",").map(x => x.trim()).filter(Boolean);
+  const rota = rotasCfg.find(x => x.toLowerCase() === t(b.franquia, 30).toLowerCase()) || "";
   const ja = await db.clientePorCpf(cpf), agora = new Date().toISOString(), id = "cl" + Date.now().toString(36) + crypto.randomBytes(3).toString("hex");
   await db.gravar("clientes", id, {
     nome, cpf: cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4"), rg: d.rg, telefone: telefoneBR(d.telefone),
     endereco, cep, logradouro: d.logradouro, numero: d.numero, bairro: d.bairro, cidade: d.cidade, uf: d.uf,
-    empresa: d.empresa, enderecoTrabalho: d.enderecoTrabalho, tempoRegistro: t(b.tempoRegistro, 40), renda: num(b.renda),
-    referencias, franquia: t(b.franquia, 30), origem: "link", semLembrete: b.aceitaWhatsapp !== true,
+    empresa: d.empresa, enderecoTrabalho: d.enderecoTrabalho, tempoRegistro: d.tempoRegistro, renda: d.renda,
+    referencias, franquia: t(b.franquia, 30), rota, origem: "link", semLembrete: b.aceitaWhatsapp !== true,
     obs: ja ? `Atenção: este CPF já está cadastrado (${ja.nome}).` : "",
     status: "pre", criadoEm: agora, aceitePrivacidadeEm: agora,
   });

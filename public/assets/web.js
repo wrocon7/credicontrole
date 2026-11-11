@@ -103,12 +103,12 @@
   pronto = (async () => {
     eu = await api("GET", "/api/eu");
     if (eu.trocarSenha) { location.href = "/trocar-senha"; return; }
-    window.__ccUsuario = eu.nome; // a tela grava quem avisou cada cliente nos lembretes
+    window.__ccUsuario = eu.nome; window.__ccEu = eu; // a tela usa o papel e a rota de quem está logado // a tela grava quem avisou cada cliente nos lembretes
     // Operador não vê o que só o administrador pode fazer (o servidor recusa de qualquer jeito).
     if (eu.papel !== "admin") {
       const s = document.createElement("style");
       s.textContent = ['[data-act="delContrato"]', '[data-act="estornar"]', '[data-act="estornarSaldo"]', '[data-act="cancelarC"]', '[data-act="delCliente"]',
-        '[data-act="delLanc"]', '[data-act="limparEx"]', '#nav a[data-v="ajustes"]'].join(",") + "{display:none!important}";
+        '[data-act="delLanc"]', '[data-act="limparEx"]', '#nav a[data-v="ajustes"]', '#nav a[data-v="caixa"]'].join(",") + "{display:none!important}";
       document.head.appendChild(s);
     }
     await puxa(true);
@@ -124,7 +124,7 @@
     const a = "color:var(--side-fg);text-decoration:none";
     const box = document.createElement("div");
     box.style.cssText = "margin-top:18px;padding:14px 10px 4px;border-top:1px solid rgba(255,255,255,.1);display:grid;gap:8px;font-size:13px";
-    box.innerHTML = `<div style="color:var(--side-muted)">Conectado como<br><b style="color:#fff">${esc(eu.nome)}</b> · ${eu.papel === "admin" ? "administrador" : "operador"}</div>
+    box.innerHTML = `<div style="color:var(--side-muted)">Conectado como<br><b style="color:#fff">${esc(eu.nome)}</b> · ${eu.papel === "admin" ? "administrador" : "operador" + (eu.rota ? " · " + esc(eu.rota) : " (sem rota)")}</div>
       <a href="#" id="ccLink" style="${a}">Copiar mensagem do pré-cadastro</a>
       ${eu.papel === "admin" ? `<a href="/usuarios" style="${a}">Usuários</a><a href="/lembretes" style="${a}">Lembretes no WhatsApp</a><a href="/auditoria" style="${a}">Auditoria</a><a href="/api/backup" download style="${a}">Baixar cópia de segurança</a>` : ""}
       <a href="/trocar-senha" style="${a}">Minha senha</a>
@@ -133,7 +133,7 @@
     // Copia a mensagem pronta para mandar ao cliente, já com o link do formulário.
     document.getElementById("ccLink").onclick = e => {
       e.preventDefault();
-      const url = location.origin + "/cadastro";
+      const url = location.origin + "/cadastro" + (eu.rota ? "?f=" + encodeURIComponent(eu.rota) : ""); // o pré-cadastro já cai na rota do operador
       const msg = `Enquanto seus dados são analisados, favor preencher o formulário a seguir:\n${url}\n\n⚠️ ATENÇÃO ⚠️\nEm "Contatos de referência", coloque um número para recado: o telefone de um familiar, com o nome e o grau de parentesco.`;
       navigator.clipboard?.writeText(msg).then(() => toast("Mensagem com o link copiada. É só colar na conversa do cliente."), () => toast(url));
     };

@@ -28,7 +28,7 @@ export async function pendentes(hoje = hojeBR()) {
   const k = calculadora(geral, hoje), clientes = new Map(docs.filter(d => d.colecao === "clientes").map(d => [d.id, d.dados]));
   const itens = [];
   for (const { id, dados: c } of docs.filter(d => d.colecao === "contratos")) {
-    if (c.cancelado) continue;
+    if (c.cancelado || c.pendente) continue; // pendente = lançado pelo operador, ainda sem o Pix confirmado
     const vencendo = [];
     if (c.modalidade === "saldo") {
       const x = k.extrato(c, hoje);

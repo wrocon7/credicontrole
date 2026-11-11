@@ -14,7 +14,7 @@
 <body>
 <main class="page">
   <h1 id="titulo">Pré-cadastro</h1>
-  <p class="muted" style="margin-top:0">Preencha seus dados para a análise do pedido. Entraremos em contato pelo telefone informado. Todos os campos são obrigatórios, menos os marcados como opcionais.</p>
+  <p class="muted" style="margin-top:0">Preencha seus dados para a análise do pedido. Entraremos em contato pelo telefone informado. Todos os campos são obrigatórios.</p>
 
   <div id="feito" class="ok" hidden>Recebemos o seu pré-cadastro. Em breve entraremos em contato pelo telefone informado.</div>
 
@@ -38,17 +38,17 @@
     <section class="card"><h2>Local de trabalho</h2><div class="form">
       <label class="f">Nome da empresa<input name="empresa" class="mai" required></label>
       <label class="f">Endereço do local de trabalho<input name="enderecoTrabalho" class="mai" required minlength="8" placeholder="Rua, número, bairro e cidade"></label>
-      <label class="f s3">Tempo de carteira <span class="opc">(opcional)</span><input name="tempoRegistro" placeholder="Ex.: 8 meses"></label>
-      <label class="f s3">Renda mensal (R$) <span class="opc">(opcional)</span><input name="renda" inputmode="decimal"></label>
+      <label class="f s3">Tempo de carteira<input name="tempoRegistro" required placeholder="Ex.: 8 meses"></label>
+      <label class="f s3">Renda mensal (R$)<input name="renda" required inputmode="decimal" placeholder="Ex.: 2.500,00"></label>
     </div></section>
 
-    <section class="card"><h2>Contatos de referência</h2><p class="muted" style="margin-top:-6px">Um familiar para recado, com nome, parentesco e telefone. O segundo contato é opcional.</p><div class="form">
+    <section class="card"><h2>Contatos de referência</h2><p class="muted" style="margin-top:-6px">Duas pessoas para recado (familiares), cada uma com nome, parentesco e telefone.</p><div class="form">
       <label class="f s3">Nome<input name="ref1Nome" class="mai" required></label>
       <label class="f s3">Parentesco<input name="ref1Parentesco" class="mai" required placeholder="Ex.: mãe"></label>
       <label class="f">Telefone<input name="ref1Telefone" required inputmode="tel" placeholder="(27) 99999-9999" maxlength="15"></label>
-      <label class="f s3">Nome <span class="opc">(opcional)</span><input name="ref2Nome" class="mai"></label>
-      <label class="f s3">Parentesco <span class="opc">(opcional)</span><input name="ref2Parentesco" class="mai"></label>
-      <label class="f">Telefone <span class="opc">(opcional)</span><input name="ref2Telefone" inputmode="tel" maxlength="15"></label>
+      <label class="f s3">Nome (2º contato)<input name="ref2Nome" class="mai" required></label>
+      <label class="f s3">Parentesco<input name="ref2Parentesco" class="mai" required placeholder="Ex.: irmão"></label>
+      <label class="f">Telefone<input name="ref2Telefone" required inputmode="tel" placeholder="(27) 99999-9999" maxlength="15"></label>
     </div></section>
 
     <section class="card"><div class="form">

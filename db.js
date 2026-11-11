@@ -49,6 +49,8 @@ export async function migrar() {
   await pool.query("alter table usuarios add column if not exists trocar_senha boolean not null default false");
   // quem existia antes desta versão nunca trocou a senha inicial (a do administrador está nas variáveis do servidor)
   if (!tinhaTroca) await pool.query("update usuarios set trocar_senha = true");
+  // rota do operador: ele vê por inteiro e altera só os clientes da própria rota (administrador não tem rota)
+  await pool.query("alter table usuarios add column if not exists rota text not null default ''");
   // um registro por lembrete (contrato + parcela + vencimento + dia do aviso): garante que ninguém recebe duas vezes
   await pool.query(`create table if not exists lembretes(
     chave text primary key, quando timestamptz not null default now(), contrato_id text, cliente_id text, nome text,
@@ -125,6 +127,12 @@ export async function todosDocs() {
   return (await pool.query("select colecao, id, dados from docs where not excluido order by colecao, id")).rows;
 }
 
+// Rota de cada cliente (id → rota), para decidir o que um operador pode ver.
+export async function rotasDosClientes() {
+  const r = await pool.query("select id, coalesce(dados->>'rota', '') as rota from docs where colecao = 'clientes' and not excluido");
+  return new Map(r.rows.map(x => [x.id, x.rota]));
+}
+
 export async function clientePorCpf(cpfDigitos) {
   const r = await pool.query(
     "select id, dados from docs where colecao = 'clientes' and not excluido and regexp_replace(dados->>'cpf', '[^0-9]', '', 'g') = $1 limit 1",
@@ -170,10 +178,10 @@ export const usuarios = {
   contar: async () => Number((await pool.query("select count(*) as n from usuarios")).rows[0].n),
   porEmail: async email => (await pool.query("select * from usuarios where lower(email) = lower($1)", [email])).rows[0] || null,
   porId: async id => (await pool.query("select * from usuarios where id = $1", [id])).rows[0] || null,
-  listar: async () => (await pool.query("select id, email, nome, papel, ativo, trocar_senha, criado from usuarios order by nome")).rows,
-  criar: async ({ email, nome, senha, papel, trocarSenha = true }) =>
-    (await pool.query("insert into usuarios (email, nome, senha, papel, trocar_senha) values ($1, $2, $3, $4, $5) returning id",
-      [email, nome, senha, papel, trocarSenha])).rows[0].id,
+  listar: async () => (await pool.query("select id, email, nome, papel, ativo, trocar_senha, rota, criado from usuarios order by nome")).rows,
+  criar: async ({ email, nome, senha, papel, trocarSenha = true, rota = "" }) =>
+    (await pool.query("insert into usuarios (email, nome, senha, papel, trocar_senha, rota) values ($1, $2, $3, $4, $5, $6) returning id",
+      [email, nome, senha, papel, trocarSenha, rota])).rows[0].id,
   // campos vêm só do servidor (lista fechada de colunas); `derrubarSessoes` invalida os logins abertos
   alterar: async (id, campos, derrubarSessoes = false) => {
     const ks = Object.keys(campos), sets = ks.map((k, i) => `${k} = $${i + 2}`);

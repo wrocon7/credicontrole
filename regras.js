@@ -5,17 +5,28 @@
 const canonico = v => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(c => [c, x[c]])) : x));
 const igual = (a, b) => canonico(a) === canonico(b);
 // O que define a dívida: depois de criado o contrato, só o administrador mexe.
-const FIXOS_CONTRATO = ["clienteId", "valor", "taxa", "modalidade", "dataContrato", "primeiroVenc", "periodicidade", "nParcelas", "multa", "mora"];
+const FIXOS_CONTRATO = ["clienteId", "valor", "taxa", "modalidade", "dataContrato", "primeiroVenc", "periodicidade", "nParcelas", "multa", "mora", "parcelaFixa"];
 
 // O que só o administrador pode fazer. Devolve o motivo da recusa, ou null. O operador cria registros, acrescenta
 // pagamentos, renegocia vencimento e marca inadimplência; não apaga nem reescreve o que já foi lançado.
-export function proibido(u, op, col, antes, novo) {
+// opc.operadorRecebe: o administrador liberou os operadores para registrar recebimentos (dar baixa).
+const temPagamento = c => (c.movimentos || []).length > 0 || (c.parcelas || []).some(p => (p.pagamentos || []).length > 0);
+const pagamentos = c => (c.movimentos || []).length + (c.parcelas || []).reduce((a, p) => a + (p.pagamentos || []).length, 0);
+export function proibido(u, op, col, antes, novo, opc = {}) {
   if (u.papel === "admin") return null;
+  const baixa = "Só o administrador dá baixa em pagamentos.";
   if (col === "config") return "Só o administrador altera as configurações.";
   if (op === "excluir") return col === "clientes" && antes?.status === "pre" ? null : "Só o administrador exclui registros.";
+  if (col === "transacoes" && !antes) { // o operador só lança no caixa o recebimento de um contrato, e só se estiver liberado
+    if (novo.tipo !== "entrada" || !novo.contratoId) return "Só o administrador faz outros lançamentos no caixa.";
+    if (!opc.operadorRecebe) return baixa;
+  }
+  if (col === "contratos" && !antes && temPagamento(novo)) return baixa;
   if (!antes) return null;
   if (col === "transacoes" || col === "avisos") return "Só o administrador altera um lançamento já gravado.";
   if (col === "contratos") {
+    if (!!novo.pendente !== !!antes.pendente) return "Só o administrador confirma o Pix de um contrato.";
+    if (!opc.operadorRecebe && pagamentos(novo) > pagamentos(antes)) return baixa;
     if (!!novo.cancelado !== !!antes.cancelado) return "Só o administrador cancela ou reativa contratos.";
     if (FIXOS_CONTRATO.some(k => !igual(antes[k], novo[k]))) return "Só o administrador altera valor, taxa ou datas de um contrato.";
     const pagos = "Só o administrador estorna ou altera pagamentos já lançados.";
@@ -44,6 +55,8 @@ export function invalido(col, id, d) {
   if (col === "config" && id === "lembretes" && (!Array.isArray(d.dias) || !d.dias.length || d.dias.length > 10 || d.dias.some(n => !Number.isInteger(n) || n < -60 || n > 30))) return "Dias de lembrete inválidos.";
   if (col === "contratos") {
     if (typeof d.clienteId !== "string" || !d.clienteId) return "Contrato sem cliente.";
+    if (d.pendente && temPagamento(d)) return "Contrato aguardando a confirmação do Pix ainda não recebe pagamento.";
+    if (d.parcelaFixa != null && (!numero(d.parcelaFixa) || d.parcelaFixa <= 0)) return "Valor da parcela inválido.";
     if (!numero(d.valor) || d.valor <= 0) return "Valor do contrato inválido.";
     if (!numero(d.taxa) || d.taxa < 0 || d.taxa > 1000) return "Taxa de juros inválida.";
     if (!dataISO(d.dataContrato)) return "Data do contrato inválida.";

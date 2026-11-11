@@ -79,7 +79,7 @@ try {
   confere("info pública tem aviso", !!(await chama("GET", "/api/publico/info")).json?.aviso);
   const pre = { nome: "Maria  da silva", cpf: "529.982.247-25", rg: "1234567 sptc/es", telefone: "27999990000", aceite: true,
     cep: "29160-161", logradouro: "Av. João Palácio", numero: "10", bairro: "Eurico Salles", cidade: "Serra", uf: "es",
-    empresa: "Mercado Bom Preço", enderecoTrabalho: "Rua das Flores, 20, Centro, Serra", ref1Nome: "José", ref1Parentesco: "pai", ref1Telefone: "(27) 98888-0000", renda: "2.500,00", franquia: "GC12" };
+    empresa: "Mercado Bom Preço", enderecoTrabalho: "Rua das Flores, 20, Centro, Serra", ref1Nome: "José", ref1Parentesco: "pai", ref1Telefone: "(27) 98888-0000", ref2Nome: "Ana", ref2Parentesco: "irmã", ref2Telefone: "27977770000", tempoRegistro: "8 meses", renda: "2.500,00", franquia: "GC12" };
   confere("CPF inválido é recusado", (await chama("POST", "/api/publico/precadastro", { ...pre, cpf: "111.111.111-11" })).status === 400);
   const so3 = await chama("POST", "/api/publico/precadastro", { nome: "Hugo Demuner", cpf: pre.cpf, telefone: pre.telefone, aceite: true });
   confere("só nome, CPF e telefone não passa: lista o que falta", so3.status === 400 && ["RG", "CEP", "nome da empresa", "endereço do local de trabalho", "telefone do contato"].every(c => so3.json?.faltam?.includes(c)), JSON.stringify(so3.json));
@@ -93,13 +93,15 @@ try {
   confere("nome, RG, empresa e endereços em maiúsculas", p0.nome === "MARIA DA SILVA" && p0.rg === "1234567 SPTC/ES" && p0.empresa === "MERCADO BOM PREÇO"
     && p0.enderecoTrabalho === "RUA DAS FLORES, 20, CENTRO, SERRA" && p0.endereco === "AV. JOÃO PALÁCIO, 10 · EURICO SALLES · SERRA/ES · 29160-161", JSON.stringify(p0));
   confere("telefone formatado e e-mail/valor pretendido fora", p0.telefone === "(27) 99999-0000" && !("email" in p0) && !("valorPretendido" in p0));
-  confere("referência formatada", p0.referencias === "JOSÉ (PAI) — (27) 98888-0000", p0.referencias);
+  confere("as duas referências formatadas", p0.referencias === "JOSÉ (PAI) — (27) 98888-0000\nANA (IRMÃ) — (27) 97777-0000", p0.referencias);
+  const sem2 = await chama("POST", "/api/publico/precadastro", { ...pre, ref2Nome: "", renda: "", tempoRegistro: "" });
+  confere("sem 2º contato, renda e tempo de carteira não passa", sem2.status === 400 && ["nome do 2º contato", "renda mensal", "tempo de carteira"].every(c => sem2.json?.faltam?.includes(c)), JSON.stringify(sem2.json));
   confere("CPF repetido fica com aviso", pres.some(d => /^Atenção/.test(d.dados.obs)));
   for (let i = 0; i < 3; i++) await chama("POST", "/api/publico/precadastro", pre);
   confere("limite de 5 envios por hora por aparelho", (await chama("POST", "/api/publico/precadastro", pre)).status === 429);
 
   // usuários e permissões
-  const op = { nome: "Operador Teste", email: "op@teste.local", senha: senhaNova(), papel: "operador" };
+  const op = { nome: "Operador Teste", email: "op@teste.local", senha: senhaNova(), papel: "operador", rota: "Rota 1" };
   const novo = await chama("POST", "/api/usuarios", op, adm);
   confere("administrador cadastra operador", novo.status === 200);
   confere("e-mail repetido dá 409", (await chama("POST", "/api/usuarios", op, adm)).status === 409);
@@ -114,8 +116,19 @@ try {
   const k1 = "/api/doc/contratos/k1", k2 = "/api/doc/contratos/k2", docs = async () => (await chama("GET", "/api/dados", null, adm)).json.docs;
   const saldo = { clienteId: "cx", valor: 500, taxa: 25, modalidade: "saldo", dataContrato: "2026-01-10", vencimento: "2026-02-10", movimentos: [{ id: "m1", data: "2026-01-20", valor: 100 }] };
   const m2 = { id: "m2", data: "2026-01-25", valor: 50 }, m3 = { id: "m3", data: "2026-02-01", valor: 20 };
-  const criou = await chama("PUT", k1, saldo, opc);
-  confere("operador cria contrato", criou.status === 200 && criou.json.versao > 0);
+  // rotas e liberação de baixa: o administrador configura, cria um cliente em cada rota
+  await chama("PUT", "/api/doc/config/geral", { nome: "Teste", rotas: "Rota 1, Rota 2", operadorRecebe: true }, adm);
+  await chama("PUT", "/api/doc/clientes/cx", { nome: "CLIENTE DA ROTA 1", cpf: "111", rg: "RG1", status: "ativo", rota: "Rota 1" }, adm);
+  await chama("PUT", "/api/doc/clientes/cy", { nome: "CLIENTE DA ROTA 2", cpf: "222", rg: "RG2", telefone: "(27) 91111-2222", status: "ativo", rota: "Rota 2" }, adm);
+  confere("/api/eu informa a rota do operador", (await chama("GET", "/api/eu", null, opc)).json?.rota === "Rota 1");
+  const semMov = { ...saldo, movimentos: [] };
+  confere("operador não lança contrato já com pagamento", (await chama("PUT", k1, saldo, opc)).status === 403);
+  const criou = await chama("PUT", k1, semMov, opc);
+  confere("contrato lançado pelo operador fica aguardando o Pix", criou.status === 200 && criou.json.versao > 0 && (await docs()).find(d => d.id === "k1").dados.pendente === true);
+  confere("operador não confirma o Pix", (await chama("PATCH", k1, { pendente: false }, opc)).status === 403);
+  confere("contrato aguardando o Pix não recebe pagamento", (await chama("PATCH", k1, { movimentos: saldo.movimentos }, opc)).status === 400);
+  confere("administrador confirma o Pix", (await chama("PATCH", k1, { pendente: false }, adm)).status === 200);
+  confere("operador registra o primeiro pagamento", (await chama("PATCH", k1, { movimentos: saldo.movimentos }, opc)).status === 200);
   confere("operador registra pagamento novo", (await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2] }, opc)).status === 200);
   confere("operador não estorna pagamento", (await chama("PATCH", k1, { movimentos: saldo.movimentos }, opc)).status === 403);
   confere("operador não muda o valor de um pagamento já lançado", (await chama("PATCH", k1, { movimentos: [{ ...saldo.movimentos[0], valor: 1 }, m2] }, opc)).status === 403);
@@ -123,14 +136,14 @@ try {
   confere("operador renegocia vencimento e marca inadimplente", (await chama("PATCH", k1, { vencimento: "2026-03-10", inad: { motivo: "teste", em: "2026-02-11" } }, opc)).status === 200);
   const p1 = { n: 1, venc: "2026-02-10", valor: 330, pagamentos: [{ data: "2026-02-10", valor: 10, txId: "t1" }] };
   const parc = { clienteId: "cx", valor: 300, taxa: 10, modalidade: "simples", dataContrato: "2026-01-10", multa: 2, mora: 0.33, parcelas: [p1] };
-  await chama("PUT", k2, parc, opc);
+  await chama("PUT", k2, parc, adm);
   confere("operador não estorna parcela", (await chama("PATCH", k2, { parcelas: [{ ...p1, pagamentos: [] }] }, opc)).status === 403);
   confere("operador não quita parcela sem lançar o pagamento", (await chama("PATCH", k2, { parcelas: [{ ...p1, quitada: true }] }, opc)).status === 403);
   confere("operador quita parcela lançando o pagamento", (await chama("PATCH", k2, { parcelas: [{ ...p1, pagamentos: [...p1.pagamentos, { data: "2026-02-11", valor: 320, txId: "t2" }], quitada: true }] }, opc)).status === 200);
   confere("operador não cancela contrato", (await chama("PATCH", k1, { cancelado: true }, opc)).status === 403);
   confere("operador não exclui contrato", (await chama("DELETE", k1, null, opc)).status === 403);
-  confere("operador lança no caixa", (await chama("PUT", "/api/doc/transacoes/t9", { tipo: "entrada", valor: 10, data: "2026-02-10" }, opc)).status === 200);
-  confere("operador não altera lançamento já gravado", (await chama("PUT", "/api/doc/transacoes/t9", { tipo: "entrada", valor: 9999, data: "2026-02-10" }, opc)).status === 403);
+  confere("operador lança no caixa", (await chama("PUT", "/api/doc/transacoes/t9", { tipo: "entrada", valor: 10, data: "2026-02-10", contratoId: "k1", clienteId: "cx" }, opc)).status === 200);
+  confere("operador não altera lançamento já gravado", (await chama("PUT", "/api/doc/transacoes/t9", { tipo: "entrada", valor: 9999, data: "2026-02-10", contratoId: "k1", clienteId: "cx" }, opc)).status === 403);
 
   // formato do que é gravado
   confere("contrato com valor em texto é recusado", (await chama("PUT", "/api/doc/contratos/k3", { ...saldo, valor: "500" }, adm)).status === 400);
@@ -145,7 +158,7 @@ try {
   confere("quem grava com a versão em dia entra; quem ficou para trás recebe 409", g1.status === 200 && g1.json.versao > v0 && g2.status === 409 && (await docs()).find(d => d.id === "k1").dados.obs === "primeira");
 
   // lote: tudo ou nada
-  const pagamento = valorCaixa => ({ ops: [{ op: "mesclar", col: "contratos", id: "k1", dados: { movimentos: [...saldo.movimentos, m2, m3] } }, { op: "gravar", col: "transacoes", id: "t10", dados: { tipo: "entrada", valor: valorCaixa, data: "2026-02-01" } }] });
+  const pagamento = valorCaixa => ({ ops: [{ op: "mesclar", col: "contratos", id: "k1", dados: { movimentos: [...saldo.movimentos, m2, m3] } }, { op: "gravar", col: "transacoes", id: "t10", dados: { tipo: "entrada", valor: valorCaixa, data: "2026-02-01", contratoId: "k1", clienteId: "cx" } }] });
   const ruim = await chama("POST", "/api/lote", pagamento(-5), opc), d1 = await docs();
   confere("lote com um item inválido não grava nada", ruim.status === 400 && d1.find(d => d.id === "k1").dados.movimentos.length === 2 && !d1.some(d => d.id === "t10"));
   const bom = await chama("POST", "/api/lote", pagamento(20), opc), d2 = await docs();
@@ -157,8 +170,25 @@ try {
   // pedidos vindos de outro site
   confere("gravação pedida por outro site é recusada", (await chama("PATCH", k1, { obs: "x" }, adm, { Origin: "https://site-malicioso.example" })).status === 403);
   confere("gravação pedida pela própria página passa", (await chama("PATCH", k1, { obs: "ok" }, adm, { Origin: BASE })).status === 200);
+  // rotas: o que o operador vê e altera
+  await chama("PUT", "/api/doc/contratos/ky", { ...semMov, clienteId: "cy" }, adm);
+  const visto = (await chama("GET", "/api/dados", null, opc)).json.docs, cyOp = visto.find(d => d.id === "cy")?.dados || {};
+  confere("operador vê só o resumo do cliente de outra rota", cyOp._resumo === true && cyOp.nome === "CLIENTE DA ROTA 2" && cyOp.rg === "RG2" && cyOp.status === "ativo" && !("cpf" in cyOp) && !("telefone" in cyOp), JSON.stringify(cyOp));
+  confere("operador não recebe contratos de outra rota e recebe os da sua", !visto.some(d => d.id === "ky") && visto.some(d => d.id === "k1") && visto.find(d => d.id === "cx")?.dados.cpf === "111");
+  const parcial = (await chama("GET", "/api/dados?desde=1", null, opc)).json.docs;
+  confere("na busca por mudanças, o que é de outra rota também não vem", !parcial.some(d => d.id === "ky" && !d.excluido) && !parcial.some(d => d.id === "cy" && d.dados.cpf));
+  confere("operador não altera cliente nem contrato de outra rota", (await chama("PATCH", "/api/doc/clientes/cy", { telefone: "x" }, opc)).status === 403
+    && (await chama("PATCH", "/api/doc/contratos/ky", { obs: "x" }, opc)).status === 403 && (await chama("PUT", "/api/doc/contratos/kz", { ...semMov, clienteId: "cy" }, opc)).status === 403);
+  confere("operador não muda a rota de um cliente", (await chama("PATCH", "/api/doc/clientes/cx", { rota: "Rota 2" }, opc)).status === 403);
+  await chama("PUT", "/api/doc/clientes/cn", { nome: "NOVO DO OPERADOR", status: "ativo", rota: "Rota 2" }, opc);
+  confere("cliente criado pelo operador cai na rota dele", (await docs()).find(d => d.id === "cn")?.dados.rota === "Rota 1");
+  await chama("PUT", "/api/doc/config/geral", { nome: "Teste", rotas: "Rota 1, Rota 2", operadorRecebe: false }, adm);
+  confere("sem liberação, operador não dá baixa", (await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2, m3, { id: "m4", data: "2026-02-05", valor: 5 }] }, opc)).status === 403
+    && (await chama("PUT", "/api/doc/transacoes/t11", { tipo: "entrada", valor: 5, data: "2026-02-05", contratoId: "k1", clienteId: "cx" }, opc)).status === 403);
+  confere("operador não lança saída no caixa", (await chama("PUT", "/api/doc/transacoes/t12", { tipo: "saida", valor: 5, data: "2026-02-05", contratoId: "k1", clienteId: "cx" }, opc)).status === 403);
+  confere("administrador continua dando baixa", (await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2, m3, { id: "m4", data: "2026-02-05", valor: 5 }] }, adm)).status === 200);
   await chama("PUT", "/api/doc/clientes/p1", { nome: "Pré Teste", status: "pre" }, opc);
-  confere("operador marca cliente como avisado (lembrete manual)", (await chama("PUT", "/api/doc/avisos/k1_saldo_2026-11-03_1", { quando: new Date().toISOString(), por: "Operador Teste" }, opc)).status === 200);
+  confere("operador marca cliente como avisado (lembrete manual)", (await chama("PUT", "/api/doc/avisos/k1_saldo_2026-11-03_1", { quando: new Date().toISOString(), por: "Operador Teste", contratoId: "k1", clienteId: "cx" }, opc)).status === 200);
   confere("operador recusa (exclui) pré-cadastro", (await chama("DELETE", "/api/doc/clientes/p1", null, opc)).status === 200);
   confere("administrador exclui contrato", (await chama("DELETE", "/api/doc/contratos/k1", null, adm)).status === 200);
 
