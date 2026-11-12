@@ -132,6 +132,8 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:60
 @media (max-width:420px){.kpis{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){aside{transition:none}}
 [hidden]{display:none!important}
+.grp td{background:var(--surface-2);padding-top:12px}
+.tbl tr.grp:hover td{background:var(--surface-2)}
 .semBaixa [data-act="pagar"]{display:none!important}
 </style>
 
@@ -465,17 +467,31 @@ VIEWS.precadastro=()=>{
   return `<p class="muted" style="margin-top:0">Pessoas interessadas que ainda não foram aprovadas. Ao aprovar, o cadastro vai para Clientes e já pode receber contratos.</p><section class="panel">${l.length?`<div class="tbl"><table><thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Empresa</th><th>Origem</th><th>Cadastrado em</th><th></th></tr></thead><tbody>${l.map(c=>`<tr><td><b>${esc(c.nome)}</b>${ex(c)}${/^Atenção/.test(c.obs||"")?`<div class="muted" style="color:var(--warn)">${esc(c.obs)}</div>`:""}</td><td>${esc(c.cpf||"—")}</td><td>${esc(c.telefone||"—")}</td><td>${esc(c.empresa||"—")}</td><td>${c.origem==="link"?`<span class="pill ok">Link${c.franquia?" · "+esc(c.franquia):""}</span>`:'<span class="pill">Manual</span>'}</td><td>${fdate((c.criadoEm||"").slice(0,10))}</td><td><div class="row"><button class="sm pri" data-act="aprovar" data-id="${c.id}">Aprovar</button><button class="sm" data-act="verCliente" data-id="${c.id}">Abrir</button><button class="sm danger" data-act="recusar" data-id="${c.id}">Recusar</button></div></td></tr>`).join("")}</tbody></table></div>`:`<div class="empty"><b>Nenhum pré-cadastro pendente</b>Use “Novo pré-cadastro” quando alguém pedir um empréstimo.</div>`}</section>`;
 };
 function tabs(key,opts){return Object.entries(opts).map(([k,l])=>`<button class="sm ${ui[key]===k?"on":""}" data-act="tab" data-k="${key}" data-v="${esc(k)}">${esc(l)}</button>`).join("")}
-function conRows(list){
+// Total pago e juros do contrato (os já pagos mais os que estão correndo hoje, nos contratos de saldo devedor).
+function pagoEJuros(c){
+  if(c.pendente)return {pago:0,juros:0};
+  if(isSaldo(c)){const x=extrato(c);return {pago:x.pago,juros:r2(x.jurosPagos+x.jurosHoje)}}
+  const ps=c.parcelas||[];return {pago:r2(ps.reduce((a,p)=>a+pagoP(p),0)),juros:r2(ps.reduce((a,p)=>a+p.valor,0)-(+c.valor||0))};
+}
+const ORDEM_SIT=["atrasado","pendente","ativo","quitado","cancelado"],NOME_SIT={atrasado:"Vencido",pendente:"Aguardando Pix",ativo:"Em dia",quitado:"Quitado",cancelado:"Cancelado"};
+function conRows(list,agrupar){
   if(!list.length)return `<div class="empty"><b>Nenhum contrato aqui</b>Use “Novo contrato” para registrar um empréstimo.</div>`;
-  const {vis,resto}=corta(list,"conMax");
-  return `<div class="tbl"><table><thead><tr><th>Cliente</th><th>Início</th><th>Modalidade</th><th class="num">Emprestado</th><th class="num">Taxa</th><th class="num">Pagas</th><th class="num">Saldo</th><th>Situação</th></tr></thead><tbody>${vis.map(c=>{const ps=c.parcelas||[];return `<tr class="click" data-act="verContrato" data-id="${c.id}"><td><b>${esc(cli(c.clienteId).nome)}</b>${ex(c)}</td><td>${fdate(c.dataContrato)}</td><td>${MOD[c.modalidade]||""}<div class="muted">${isSaldo(c)?"vence "+fdate(c.vencimento):PER[c.periodicidade]}</div></td><td class="num">${money(c.valor)}</td><td class="num">${(+c.taxa).toLocaleString("pt-BR")}%${isSaldo(c)?" a.m.":""}</td><td class="num">${isSaldo(c)?(c.movimentos||[]).length+" pgto":ps.filter(quitadaP).length+"/"+ps.length}</td><td class="num">${money(saldoContrato(c))}</td><td>${pillC(c)}${c.inad&&!["quitado","cancelado"].includes(statusC(c))?' <span class="pill bad">Inadimplente</span>':""}</td></tr>`}).join("")}</tbody></table></div>${resto}`;
+  const {vis,resto}=corta(list,"conMax"),cont={};
+  if(agrupar)for(const c of list){const s=statusC(c);cont[s]=(cont[s]||0)+1}
+  let ult=null;
+  return `<div class="tbl"><table><thead><tr><th>Cliente</th><th>Início</th><th>Modalidade</th><th class="num">Emprestado</th><th class="num">Taxa</th><th class="num">Pagas</th><th class="num">Pago</th><th class="num">Juros</th><th class="num">Saldo hoje</th><th>Situação</th></tr></thead><tbody>${vis.map(c=>{const ps=c.parcelas||[],pj=pagoEJuros(c),sit=statusC(c);
+    const grupo=agrupar&&sit!==ult?(ult=sit,`<tr class="grp"><td colspan="10"><b>${NOME_SIT[sit]} (${cont[sit]})</b></td></tr>`):"";
+    return grupo+`<tr class="click" data-act="verContrato" data-id="${c.id}"><td><b>${esc(cli(c.clienteId).nome)}</b>${ex(c)}</td><td>${fdate(c.dataContrato)}</td><td>${MOD[c.modalidade]||""}<div class="muted">${isSaldo(c)?"vence "+fdate(c.vencimento):PER[c.periodicidade]}</div></td><td class="num">${money(c.valor)}</td><td class="num">${(+c.taxa).toLocaleString("pt-BR")}%${isSaldo(c)?" a.m.":""}</td><td class="num">${isSaldo(c)?(c.movimentos||[]).length+" pgto":ps.filter(quitadaP).length+"/"+ps.length}</td><td class="num">${money(pj.pago)}</td><td class="num">${money(pj.juros)}</td><td class="num"><b>${money(saldoContrato(c))}</b></td><td>${pillC(c)}${c.inad&&!["quitado","cancelado"].includes(statusC(c))?' <span class="pill bad">Inadimplente</span>':""}</td></tr>`}).join("")}</tbody></table></div>${resto}`;
 }
 VIEWS.contratos=()=>{
   const q=ui.conQ.toLowerCase();
   let l=S.contratos.filter(c=>!q||cli(c.clienteId).nome.toLowerCase().includes(q));
   if(ui.conSt!=="todos")l=l.filter(c=>statusC(c)===ui.conSt);
-  l.sort((a,b)=>(b.dataContrato||"").localeCompare(a.dataContrato||""));
-  return `<div class="toolbar"><input type="search" id="conQ" placeholder="Buscar por cliente" value="${esc(ui.conQ)}" aria-label="Buscar contratos"><div class="tabs">${tabs("conSt",{todos:"Todos",pendente:"Aguardando Pix",ativo:"Em dia",atrasado:"Em atraso",quitado:"Quitados",cancelado:"Cancelados"})}</div></div><section class="panel">${conRows(l)}</section>`;
+  const ag=ui.conSt==="todos"; // em "Todos" a lista vem agrupada por situação, com a contagem de cada grupo
+  l.sort((a,b)=>(ag?ORDEM_SIT.indexOf(statusC(a))-ORDEM_SIT.indexOf(statusC(b)):0)||(b.dataContrato||"").localeCompare(a.dataContrato||""));
+  const nSit={};for(const c of S.contratos)nSit[statusC(c)]=(nSit[statusC(c)]||0)+1;
+  const n=k=>nSit[k]?` (${nSit[k]})`:"";
+  return `<div class="toolbar"><input type="search" id="conQ" placeholder="Buscar por cliente" value="${esc(ui.conQ)}" aria-label="Buscar contratos"><div class="tabs">${tabs("conSt",{todos:"Todos ("+S.contratos.length+")",pendente:"Aguardando Pix"+n("pendente"),ativo:"Em dia"+n("ativo"),atrasado:"Em atraso"+n("atrasado"),quitado:"Quitados"+n("quitado"),cancelado:"Cancelados"+n("cancelado")})}</div></div><section class="panel">${conRows(l,ag)}</section>`;
 };
 VIEWS.inadimplentes=()=>{
   const at=abertas().filter(emInad),by={},cd=corte(),hoje=x=>isSaldo(x.c)?x.p.valor:x.e.devido; // saldo: o de hoje, não o projetado até o vencimento
@@ -551,7 +567,7 @@ function verCliente(id){
   if(c._resumo){toast("Cliente de outra rota: só os dados básicos aparecem.");return}
   const cs=S.contratos.filter(k=>k.clienteId===id).sort((a,b)=>(b.dataContrato||"").localeCompare(a.dataContrato||""));
   openDrawer(`<div class="hd"><div><h2>${esc(c.nome)}${ex(c)}</h2><div class="muted">${c.status==="pre"?"Pré-cadastro":c.status==="bloqueado"?"Bloqueado":"Cliente ativo"}</div></div><button data-act="close" aria-label="Fechar">Fechar</button></div>
-  <div class="panel"><div class="body dl">${[["CPF",c.cpf],["RG",c.rg],["Telefone",c.telefone],["E-mail",c.email],["Endereço",c.endereco],["Indicação",c.indicacao],["Empresa",c.empresa],["Endereço do trabalho",c.enderecoTrabalho],["Tempo de carteira",c.tempoRegistro],["Renda mensal",c.renda?money(c.renda):""],["Rota",c.rota],["Origem",c.origem==="link"?"Link de pré-cadastro"+(c.franquia?" · "+c.franquia:""):"Cadastro manual"],["Lembretes no WhatsApp",c.semLembrete?"Não quer receber":"Recebe"],["Cadastrado em",fdate((c.criadoEm||"").slice(0,10))]].map(([k,v])=>`<div><span>${k}</span><b>${esc(v||"—")}</b></div>`).join("")}${c.referencias?`<div style="grid-column:1/-1;white-space:pre-line"><span>Contatos de referência</span>${esc(c.referencias)}</div>`:""}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
+  <div class="panel"><div class="body dl">${[["CPF",c.cpf],["RG",c.rg],["Telefone",c.telefone],["E-mail",c.email],["Endereço",c.endereco],["Indicação",c.indicacao],["Profissão",c.profissao],["Empresa",c.empresa],["Endereço do trabalho",c.enderecoTrabalho],["Tempo de carteira",c.tempoRegistro],["Renda mensal",c.renda?money(c.renda):""],["Rota",c.rota],["Origem",c.origem==="link"?"Link de pré-cadastro"+(c.franquia?" · "+c.franquia:""):"Cadastro manual"],["Lembretes no WhatsApp",c.semLembrete?"Não quer receber":"Recebe"],["Cadastrado em",fdate((c.criadoEm||"").slice(0,10))]].map(([k,v])=>`<div><span>${k}</span><b>${esc(v||"—")}</b></div>`).join("")}${c.referencias?`<div style="grid-column:1/-1;white-space:pre-line"><span>Contatos de referência</span>${esc(c.referencias)}</div>`:""}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
   <div class="row"><button data-act="editCliente" data-id="${id}">Editar dados</button>${c.status!=="pre"?`<button class="pri" data-act="novoContrato" data-cli="${id}">Novo contrato</button>`:`<button class="pri" data-act="aprovar" data-id="${id}">Aprovar cadastro</button>`}<button data-act="bloquear" data-id="${id}">${c.status==="bloqueado"?"Desbloquear":"Bloquear"}</button><button class="danger" data-act="delCliente" data-id="${id}">Excluir</button></div>
   <section class="panel"><header><h2>Contratos</h2></header>${conRows(cs)}</section>`);
 }
@@ -590,6 +606,7 @@ function formCliente(c,pre){
     <label class="f">Telefone (WhatsApp)<input name="telefone" inputmode="tel" placeholder="(27) 98888-7777" value="${esc(c.telefone)}"></label>
     <label class="f">E-mail<input name="email" type="email" value="${esc(c.email)}"></label>
     <label class="f full">Endereço residencial<input name="endereco" style="text-transform:uppercase" value="${esc(c.endereco)}"></label>
+    <label class="f">Profissão<input name="profissao" style="text-transform:uppercase" value="${esc(c.profissao)}"></label>
     <label class="f">Nome da empresa<input name="empresa" style="text-transform:uppercase" value="${esc(c.empresa)}"></label>
     <label class="f">Indicado por<input name="indicacao" style="text-transform:uppercase" value="${esc(c.indicacao)}"></label>
     <label class="f full">Endereço do local de trabalho<input name="enderecoTrabalho" style="text-transform:uppercase" value="${esc(c.enderecoTrabalho)}"></label>
@@ -603,7 +620,7 @@ function formCliente(c,pre){
   $("#fCli").onsubmit=async e=>{e.preventDefault();const d=formData(e.target);
     const o={...c,...d,id:c.id||uid("cl"),status:c.status||(pre?"pre":"ativo"),criadoEm:c.criadoEm||new Date().toISOString()};
     o.renda=o.renda?+o.renda:null;
-    for(const k of ["nome","rg","endereco","empresa","enderecoTrabalho","indicacao"])if(typeof o[k]==="string")o[k]=o[k].trim().replace(/\s+/g," ").toLocaleUpperCase("pt-BR"); // padrão do contrato
+    for(const k of ["nome","rg","endereco","empresa","enderecoTrabalho","indicacao","profissao"])if(typeof o[k]==="string")o[k]=o[k].trim().replace(/\s+/g," ").toLocaleUpperCase("pt-BR"); // padrão do contrato
     if(typeof o.referencias==="string")o.referencias=o.referencias.trim().toLocaleUpperCase("pt-BR"); // mantém uma referência por linha
     o.semLembrete=d.semLembrete==="on"; // caixa desmarcada não vem no formulário
     try{await put("clientes",o);closeTop();toast(c.id?"Cliente atualizado":"Cliente cadastrado");if($(".drawer"))verCliente(o.id)}catch(_){}};

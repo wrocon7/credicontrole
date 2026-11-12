@@ -79,10 +79,10 @@ try {
   confere("info pública tem aviso", !!(await chama("GET", "/api/publico/info")).json?.aviso);
   const pre = { nome: "Maria  da silva", cpf: "529.982.247-25", rg: "1234567 sptc/es", telefone: "27999990000", aceite: true,
     cep: "29160-161", logradouro: "Av. João Palácio", numero: "10", bairro: "Eurico Salles", cidade: "Serra", uf: "es",
-    empresa: "Mercado Bom Preço", enderecoTrabalho: "Rua das Flores, 20, Centro, Serra", ref1Nome: "José", ref1Parentesco: "pai", ref1Telefone: "(27) 98888-0000", ref2Nome: "Ana", ref2Parentesco: "irmã", ref2Telefone: "27977770000", tempoRegistro: "8 meses", renda: "2.500,00", franquia: "GC12" };
+    profissao: "caixa", empresa: "Mercado Bom Preço", enderecoTrabalho: "Rua das Flores, 20, Centro, Serra", ref1Nome: "José", ref1Parentesco: "pai", ref1Telefone: "(27) 98888-0000", ref2Nome: "Ana", ref2Parentesco: "irmã", ref2Telefone: "27977770000", tempoRegistro: "8 meses", renda: "2.500,00", franquia: "GC12" };
   confere("CPF inválido é recusado", (await chama("POST", "/api/publico/precadastro", { ...pre, cpf: "111.111.111-11" })).status === 400);
   const so3 = await chama("POST", "/api/publico/precadastro", { nome: "Hugo Demuner", cpf: pre.cpf, telefone: pre.telefone, aceite: true });
-  confere("só nome, CPF e telefone não passa: lista o que falta", so3.status === 400 && ["RG", "CEP", "nome da empresa", "endereço do local de trabalho", "telefone do contato"].every(c => so3.json?.faltam?.includes(c)), JSON.stringify(so3.json));
+  confere("só nome, CPF e telefone não passa: lista o que falta", so3.status === 400 && ["RG", "CEP", "profissão", "nome da empresa", "endereço do local de trabalho", "telefone do contato"].every(c => so3.json?.faltam?.includes(c)), JSON.stringify(so3.json));
   confere("sem aceite é recusado", (await chama("POST", "/api/publico/precadastro", { ...pre, aceite: false })).status === 400);
   confere("pré-cadastro válido é aceito", (await chama("POST", "/api/publico/precadastro", pre)).status === 200);
   confere("robô (campo escondido) recebe ok mas não grava", (await chama("POST", "/api/publico/precadastro", { ...pre, site: "x" })).status === 200);

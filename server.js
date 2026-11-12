@@ -357,13 +357,13 @@ app.post("/api/publico/precadastro", assincrono(async (req, res) => {
   const num = v => { const x = parseFloat(String(v ?? "").replace(/\./g, "").replace(",", ".")); return x > 0 ? Math.round(x * 100) / 100 : null; };
   const d = { nome: M(b.nome), cpf: t(b.cpf, 20).replace(/\D/g, ""), rg: M(b.rg, 30), telefone: t(b.telefone, 30),
     cep: t(b.cep, 9).replace(/\D/g, ""), logradouro: M(b.logradouro), numero: M(b.numero, 20), bairro: M(b.bairro, 80), cidade: M(b.cidade, 80), uf: M(b.uf, 2),
-    empresa: M(b.empresa), enderecoTrabalho: M(b.enderecoTrabalho, 200), ref1Nome: M(b.ref1Nome, 80), ref1Parentesco: M(b.ref1Parentesco, 40), ref1Telefone: t(b.ref1Telefone, 30),
+    profissao: M(b.profissao, 80), empresa: M(b.empresa), enderecoTrabalho: M(b.enderecoTrabalho, 200), ref1Nome: M(b.ref1Nome, 80), ref1Parentesco: M(b.ref1Parentesco, 40), ref1Telefone: t(b.ref1Telefone, 30),
     ref2Nome: M(b.ref2Nome, 80), ref2Parentesco: M(b.ref2Parentesco, 40), ref2Telefone: t(b.ref2Telefone, 30), tempoRegistro: t(b.tempoRegistro, 40), renda: num(b.renda) };
   const digitos = v => v.replace(/\D/g, "").length;
   const faltam = [
     [d.nome.length >= 5 && d.nome.includes(" "), "nome completo"], [cpfValido(d.cpf), "CPF válido"], [d.rg.replace(/[^0-9A-Z]/g, "").length >= 5, "RG"],
     [digitos(d.telefone) >= 10, "telefone com DDD"], [d.cep.length === 8, "CEP"], [d.logradouro, "rua"], [d.numero, "número"], [d.bairro, "bairro"],
-    [d.cidade, "cidade"], [/^[A-Z]{2}$/.test(d.uf), "UF"], [d.empresa, "nome da empresa"], [d.enderecoTrabalho.length >= 8, "endereço do local de trabalho"],
+    [d.cidade, "cidade"], [/^[A-Z]{2}$/.test(d.uf), "UF"], [d.profissao, "profissão"], [d.empresa, "nome da empresa"], [d.enderecoTrabalho.length >= 8, "endereço do local de trabalho"],
     [d.ref1Nome, "nome do contato de referência"], [d.ref1Parentesco, "parentesco do contato"], [digitos(d.ref1Telefone) >= 10, "telefone do contato"],
     [d.ref2Nome, "nome do 2º contato"], [d.ref2Parentesco, "parentesco do 2º contato"], [digitos(d.ref2Telefone) >= 10, "telefone do 2º contato"],
     [d.tempoRegistro, "tempo de carteira"], [d.renda > 0, "renda mensal"],
@@ -383,7 +383,7 @@ app.post("/api/publico/precadastro", assincrono(async (req, res) => {
   await db.gravar("clientes", id, {
     nome, cpf: cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4"), rg: d.rg, telefone: telefoneBR(d.telefone),
     endereco, cep, logradouro: d.logradouro, numero: d.numero, bairro: d.bairro, cidade: d.cidade, uf: d.uf,
-    empresa: d.empresa, enderecoTrabalho: d.enderecoTrabalho, tempoRegistro: d.tempoRegistro, renda: d.renda,
+    profissao: d.profissao, empresa: d.empresa, enderecoTrabalho: d.enderecoTrabalho, tempoRegistro: d.tempoRegistro, renda: d.renda,
     referencias, franquia: t(b.franquia, 30), rota, origem: "link", semLembrete: b.aceitaWhatsapp !== true,
     obs: ja ? `Atenção: este CPF já está cadastrado (${ja.nome}).` : "",
     status: "pre", criadoEm: agora, aceitePrivacidadeEm: agora,
@@ -403,7 +403,7 @@ await db.migrar();
 // Cadastros antigos com nome ou endereço em minúsculas (ex.: "HUGO demuner") passam para maiúsculas, igual aos novos.
 for (const { id, dados } of (await db.todosDocs()).filter(d => d.colecao === "clientes")) {
   const novo = { ...dados };
-  for (const k of ["nome", "rg", "empresa", "enderecoTrabalho", "endereco", "logradouro", "numero", "bairro", "cidade", "uf", "indicacao", "referencias"]) if (typeof novo[k] === "string") novo[k] = maiusculas(novo[k]);
+  for (const k of ["nome", "rg", "empresa", "enderecoTrabalho", "endereco", "logradouro", "numero", "bairro", "cidade", "uf", "indicacao", "referencias", "profissao"]) if (typeof novo[k] === "string") novo[k] = maiusculas(novo[k]);
   if (JSON.stringify(novo) === JSON.stringify(dados)) continue;
   await db.gravar("clientes", id, novo);
   await db.auditar({ acao: "padronizar_maiusculas", colecao: "clientes", id, antes: { nome: dados.nome }, depois: { nome: novo.nome } });
