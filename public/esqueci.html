@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Esqueci minha senha · CrediControle</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Figtree:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/assets/base.css">
+</head>
+<body>
+<main class="page narrow">
+  <div class="brand"><i>C</i>CrediControle</div>
+  <div class="card">
+    <h1>Esqueci minha senha</h1>
+    <p class="muted" style="margin-top:0">Informe o e-mail que você usa para entrar.</p>
+    <div id="feito" class="ok" hidden></div>
+    <form id="f" class="form">
+      <label class="f">E-mail<input name="email" type="email" autocomplete="username" required autofocus></label>
+      <div id="erro" class="erro" hidden></div>
+      <button class="pri" type="submit">Pedir nova senha</button>
+    </form>
+    <p style="text-align:center;margin-bottom:0"><a href="/login" style="color:var(--accent)">Voltar para entrar</a></p>
+  </div>
+</main>
+<script>
+const f = document.getElementById("f"), erro = document.getElementById("erro");
+f.onsubmit = async e => {
+  e.preventDefault();
+  const b = f.querySelector("button"); b.disabled = true; erro.hidden = true;
+  try {
+    const r = await fetch("/api/esqueci", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: f.email.value }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || "Não foi possível enviar o pedido.");
+    f.hidden = true; const ok = document.getElementById("feito"); ok.textContent = j.mensagem; ok.hidden = false;
+  } catch (x) { erro.textContent = x.message; erro.hidden = false; b.disabled = false; }
+};
+</script>
+</body>
+</html>

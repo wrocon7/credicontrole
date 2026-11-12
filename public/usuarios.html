@@ -15,13 +15,22 @@
   <p class="muted" style="margin-top:0">Quem pode entrar no sistema. O operador vê por inteiro só os clientes da rota dele; das outras rotas, só nome, identidade e situação. Administradores veem tudo e gerenciam esta lista.</p>
   <div id="erro" class="erro" hidden></div>
   <section class="card"><div class="tbl"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Rota</th><th>Situação</th><th></th></tr></thead><tbody id="lista"></tbody></table></div></section>
+  <section class="card" id="ed" hidden><h2>Editar usuário</h2>
+    <form id="fe" class="form">
+      <label class="f s3">Nome<input name="nome" required></label>
+      <label class="f s3">E-mail<input name="email" type="email" required></label>
+      <label class="f s3">Papel<select name="papel"><option value="operador">Operador</option><option value="admin">Administrador</option></select></label>
+      <label class="f s3">Rota (só operador)<select name="rota"></select></label>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" id="cancelaEd">Cancelar</button><button class="pri" type="submit">Salvar</button></div>
+    </form>
+  </section>
   <section class="card"><h2>Novo usuário</h2>
     <form id="f" class="form">
       <label class="f s3">Nome<input name="nome" required></label>
       <label class="f s3">E-mail<input name="email" type="email" required></label>
       <label class="f s3">Senha inicial (8+ caracteres)<input name="senha" type="password" minlength="8" required autocomplete="new-password"></label>
       <label class="f s3">Papel<select name="papel"><option value="operador">Operador</option><option value="admin">Administrador</option></select></label>
-      <label class="f">Rota do operador<input name="rota" placeholder="Ex.: Rota 1 (igual à cadastrada em Configurações)"></label>
+      <label class="f">Rota do operador<select name="rota"></select></label>
       <button class="pri" type="submit">Cadastrar usuário</button>
     </form>
   </section>
@@ -37,18 +46,37 @@ async function api(m, url, corpo) {
   return j;
 }
 const mostra = m => { erro.textContent = m; erro.hidden = !m; };
+let usuarios = [], rotas = [];
+// rotas cadastradas em Configurações; a rota atual de alguém aparece mesmo se tiver saído da lista
+const opcoesRota = atual => ['<option value="">Sem rota</option>', ...[...new Set([...rotas, atual].filter(Boolean))].map(r => `<option ${r === atual ? "selected" : ""}>${esc(r)}</option>`)].join("");
+const fe = document.getElementById("fe"), ed = document.getElementById("ed");
+const ajustaRota = f => { f.rota.disabled = f.papel.value === "admin"; if (f.papel.value === "admin") f.rota.value = ""; };
+function editar(id) {
+  const u = usuarios.find(x => x.id === id); if (!u) return;
+  fe.dataset.id = id; fe.nome.value = u.nome; fe.email.value = u.email; fe.papel.value = u.papel; fe.rota.innerHTML = opcoesRota(u.rota || "");
+  ajustaRota(fe); ed.hidden = false; ed.scrollIntoView({ behavior: "smooth" }); fe.nome.focus();
+}
+fe.papel.onchange = () => ajustaRota(fe);
+document.getElementById("cancelaEd").onclick = () => { ed.hidden = true; };
+fe.onsubmit = async e => {
+  e.preventDefault();
+  try { mostra(""); await api("PATCH", "/api/usuarios/" + fe.dataset.id, { nome: fe.nome.value, email: fe.email.value, papel: fe.papel.value, rota: fe.rota.value }); ed.hidden = true; await carrega(); }
+  catch (x) { mostra(x.message); }
+};
 async function carrega() {
-  const us = await api("GET", "/api/usuarios");
+  [usuarios, rotas] = await Promise.all([api("GET", "/api/usuarios"), api("GET", "/api/rotas")]);
+  const us = usuarios, f = document.getElementById("f");
+  f.rota.innerHTML = opcoesRota(""); ajustaRota(f); f.papel.onchange = () => ajustaRota(f);
   document.getElementById("lista").innerHTML = us.map(u => `<tr><td><b>${esc(u.nome)}</b></td><td>${esc(u.email)}</td><td>${u.papel === "admin" ? "Administrador" : "Operador"}</td><td>${u.papel === "admin" ? "—" : esc(u.rota || "sem rota")}</td>
-    <td>${u.ativo ? '<span class="pill ok">Ativo</span>' : '<span class="pill">Desativado</span>'}${u.ativo && u.trocar_senha ? ' <span class="pill">vai trocar a senha</span>' : ""}</td>
-    <td style="white-space:nowrap"><button class="sm" data-a="ativo" data-id="${u.id}" data-v="${!u.ativo}">${u.ativo ? "Desativar" : "Reativar"}</button> <button class="sm" data-a="senha" data-id="${u.id}">Nova senha</button>${u.papel === "admin" ? "" : ` <button class="sm" data-a="rota" data-id="${u.id}" data-v="${esc(u.rota || "")}">Rota</button>`}</td></tr>`).join("");
+    <td>${u.ativo ? '<span class="pill ok">Ativo</span>' : '<span class="pill">Desativado</span>'}${u.ativo && u.trocar_senha ? ' <span class="pill">vai trocar a senha</span>' : ""}${u.pedido_senha ? ` <span class="pill" style="background:var(--bad-soft);color:var(--bad)">pediu nova senha em ${new Date(u.pedido_senha).toLocaleString("pt-BR")}</span>` : ""}</td>
+    <td style="white-space:nowrap"><button class="sm" data-a="editar" data-id="${u.id}">Editar</button> <button class="sm" data-a="ativo" data-id="${u.id}" data-v="${!u.ativo}">${u.ativo ? "Desativar" : "Reativar"}</button> <button class="sm" data-a="senha" data-id="${u.id}">Nova senha</button></td></tr>`).join("");
 }
 document.getElementById("lista").onclick = async e => {
   const b = e.target.closest("button"); if (!b) return;
   try {
     mostra("");
-    if (b.dataset.a === "rota") { const r = prompt("Rota deste operador (igual à cadastrada em Configurações; vazio para tirar):", b.dataset.v); if (r === null) return; await api("PATCH", "/api/usuarios/" + b.dataset.id, { rota: r }); }
-    else if (b.dataset.a === "ativo") await api("PATCH", "/api/usuarios/" + b.dataset.id, { ativo: b.dataset.v === "true" });
+    if (b.dataset.a === "editar") return editar(+b.dataset.id);
+    if (b.dataset.a === "ativo") await api("PATCH", "/api/usuarios/" + b.dataset.id, { ativo: b.dataset.v === "true" });
     else { const s = prompt("Senha provisória (8+ caracteres). A pessoa vai trocar no próximo acesso:"); if (!s) return; await api("PATCH", "/api/usuarios/" + b.dataset.id, { senha: s }); alert("Senha provisória definida. Os logins abertos dessa pessoa foram encerrados."); }
     await carrega();
   } catch (x) { mostra(x.message); }

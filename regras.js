@@ -1,6 +1,22 @@
 // Regras do que pode ser gravado: o que só o administrador faz (proibido) e o formato mínimo de cada registro
 // (invalido). Ficam fora do server.js para serem testadas e para conferir dados já existentes contra elas.
 
+import { cpfValido } from "./auth.js";
+
+// Cadastro de cliente novo pela tela interna: os mesmos campos obrigatórios do formulário público.
+// Devolve a lista do que falta (vazia = completo). Vale só na criação, para não travar fichas antigas.
+export function faltamNoCliente(d) {
+  const txt = v => (typeof v === "string" ? v.trim() : ""), dig = v => txt(v).replace(/\D/g, "").length;
+  return [
+    [txt(d.nome).length >= 5 && txt(d.nome).includes(" "), "nome completo"], [cpfValido(txt(d.cpf).replace(/\D/g, "")), "CPF válido"],
+    [txt(d.rg).replace(/[^0-9A-Za-z]/g, "").length >= 5, "RG"], [dig(d.telefone) >= 10, "telefone com DDD"],
+    [txt(d.endereco).length >= 8, "endereço residencial"], [txt(d.profissao), "profissão"], [txt(d.empresa), "nome da empresa"],
+    [txt(d.enderecoTrabalho).length >= 8, "endereço do local de trabalho"], [txt(d.tempoRegistro), "tempo de carteira"],
+    [typeof d.renda === "number" && d.renda > 0, "renda mensal"],
+    [txt(d.referencias).split("\n").filter(l => l.trim()).length >= 2, "duas referências (uma por linha)"],
+  ].filter(([ok]) => !ok).map(([, r]) => r);
+}
+
 // Comparação que não depende da ordem das chaves (o banco reordena as chaves do JSON).
 const canonico = v => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(c => [c, x[c]])) : x));
 const igual = (a, b) => canonico(a) === canonico(b);

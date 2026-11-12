@@ -53,10 +53,13 @@ try {
 
   const hoje = hojeBR(), k = calculadora({}, hoje), amanha = k.addDays(hoje, 1), dataBR = s => s.split("-").reverse().join("/");
   const grava = (col, id, dados) => chama("PUT", `/api/doc/${col}/${id}`, dados, adm);
-  await grava("clientes", "c1", { nome: "Ana Souza", telefone: "(27) 99999-1234", status: "ativo" });
-  await grava("clientes", "c2", { nome: "Bia Lima", telefone: "(27) 98888-0000", status: "ativo" });
-  await grava("clientes", "c3", { nome: "Caio Reis", telefone: "(27) 97777-1111", status: "ativo", semLembrete: true });
-  await grava("clientes", "c4", { nome: "Davi Melo", telefone: "", status: "ativo" });
+  const FICHA = { cpf: "529.982.247-25", rg: "1234567 SPTC/ES", endereco: "RUA A, 1 · CENTRO · SERRA/ES", profissao: "CAIXA", empresa: "LOJA X",
+    enderecoTrabalho: "RUA B, 2, CENTRO, SERRA", tempoRegistro: "1 ANO", renda: 2000, referencias: "ANA (MÃE) — (27) 98888-0000\nRUI (PAI) — (27) 97777-0000" };
+  await grava("clientes", "c1", { ...FICHA, nome: "Ana Souza", telefone: "(27) 99999-1234", status: "ativo" });
+  await grava("clientes", "c2", { ...FICHA, nome: "Bia Lima", telefone: "(27) 98888-0000", status: "ativo" });
+  await grava("clientes", "c3", { ...FICHA, nome: "Caio Reis", telefone: "(27) 97777-1111", status: "ativo", semLembrete: true });
+  await grava("clientes", "c4", { ...FICHA, nome: "Davi Melo", telefone: "(27) 90000-0000", status: "ativo" });
+  await chama("PATCH", "/api/doc/clientes/c4", { telefone: "" }, adm); // ficha antiga sem celular
   const saldo = (cli, venc, extra = {}) => ({ clienteId: cli, valor: 1000, taxa: 30, modalidade: "saldo", dataContrato: k.addDays(hoje, -10), vencimento: venc, movimentos: [], ...extra });
   await grava("contratos", "k1", saldo("c1", amanha));                                    // amanhã: 1000 × (1 + 1% × 11 dias) = 1.110,00
   const parcela = (cli, valor, extra = {}) => ({ clienteId: cli, valor, taxa: 10, modalidade: "simples", dataContrato: k.addDays(hoje, -30), parcelas: [{ n: 1, venc: hoje, valor, pagamentos: [], ...extra }] });

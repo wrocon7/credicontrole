@@ -86,6 +86,24 @@ a pasta com o app parado.
 - **Valor da parcela:** no novo contrato (parcelado, Price e só juros) dá para digitar o valor da parcela; a taxa é
   recalculada e fica gravada no contrato.
 
+## Recuperação de senha
+
+No login há o link **"Esqueci minha senha"**. A pessoa informa o e-mail e:
+
+- **Com e-mail configurado**, recebe um link que vale 30 minutos e serve uma vez só. Cadastre na Render:
+
+  | Variável | Valor |
+  |---|---|
+  | `APP_URL` | endereço do sistema, sem barra no fim (ex.: `https://credicontrole.onrender.com`) |
+  | `SMTP_HOST` / `SMTP_PORT` | ex.: `smtp.gmail.com` / `465` |
+  | `SMTP_USER` / `SMTP_PASS` | a conta e uma **senha de app** (no Gmail: Conta Google → Segurança → Senhas de app; exige verificação em duas etapas) |
+  | `SMTP_FROM` | opcional, ex.: `CrediControle <sua-conta@gmail.com>` |
+
+- **Sem e-mail configurado**, o pedido aparece em **Usuários** ("pediu nova senha em…") e o administrador define uma
+  senha provisória com **Nova senha**. A pessoa troca no primeiro acesso.
+
+A resposta da tela é a mesma exista o e-mail ou não, para não revelar quem tem conta.
+
 ## Segurança
 
 - **Papéis:** o *operador* cadastra clientes, cria contratos, acrescenta pagamentos, renegocia vencimento e marca

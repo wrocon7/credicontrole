@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 import * as db from "./db.js";
 import * as lembretes from "./lembretes.js";
 import { hojeBR } from "./calculo.js";
-import { proibido, invalido } from "./regras.js";
+import { proibido, invalido, faltamNoCliente } from "./regras.js";
+import { enviar, emailConfigurado } from "./email.js";
 import { hashSenha, confereSenha, hashFraco, HASH_FALSO, SENHA_MAX, criarToken, lerToken, lerCookies, limitador, cpfValido, DURACAO_SESSAO } from "./auth.js";
 
 const raiz = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +23,7 @@ const PAGINAS = {
   index: `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"></head><body><script src="/assets/web.js"></script>\n${readFileSync(path.join(raiz, "app", "credicontrole.html"), "utf8")}\n</body></html>`,
   login: ler("login.html"), cadastro: ler("cadastro.html"), usuarios: ler("usuarios.html"),
   auditoria: ler("auditoria.html"), "trocar-senha": ler("trocar-senha.html"), lembretes: ler("lembretes.html"),
+  esqueci: ler("esqueci.html"), redefinir: ler("redefinir.html"),
 };
 
 const app = express();
@@ -108,6 +110,8 @@ app.get("/auditoria", paginaLogada("auditoria", true));
 app.get("/lembretes", paginaLogada("lembretes", true));
 app.get("/login", (req, res) => pagina(res, "login"));
 app.get("/cadastro", (req, res) => pagina(res, "cadastro"));
+app.get("/esqueci", (req, res) => pagina(res, "esqueci"));
+app.get("/redefinir", (req, res) => pagina(res, "redefinir"));
 app.use("/assets", express.static(path.join(raiz, "public", "assets"), { maxAge: PRODUCAO ? "1h" : 0 }));
 app.get("/saude", (req, res) => res.json({ ok: true }));
 app.get("/favicon.ico", (req, res) => res.status(204).end());
@@ -134,6 +138,42 @@ app.post("/api/login", assincrono(async (req, res) => {
   res.json({ ok: true, trocarSenha: u.trocar_senha });
 }));
 app.post("/api/logout", (req, res) => { res.clearCookie("cc_sessao", { path: "/" }); res.json({ ok: true }); });
+
+// Recuperação de senha. A resposta é sempre a mesma, exista o e-mail ou não. Com e-mail configurado (SMTP_* e APP_URL),
+// a pessoa recebe um link que vale 30 minutos; sem isso, o pedido aparece para o administrador em Usuários.
+const pedidosSenha = limitador(5, 15 * 60e3), redefinicoes = limitador(10, 15 * 60e3);
+const hashToken = t => crypto.createHash("sha256").update(String(t)).digest("hex");
+const linkPorEmail = () => emailConfigurado() && !!process.env.APP_URL;
+app.post("/api/esqueci", assincrono(async (req, res) => {
+  const email = String(req.body?.email || "").trim().slice(0, 200);
+  if (!pedidosSenha(req.ipCliente)) return res.status(429).json({ erro: "Muitos pedidos. Espere 15 minutos." });
+  const u = email ? await db.usuarios.porEmail(email) : null;
+  if (u && u.ativo) {
+    const token = crypto.randomBytes(32).toString("base64url");
+    await db.usuarios.alterar(u.id, { reset_hash: hashToken(token), reset_expira: new Date(Date.now() + 30 * 60e3).toISOString(), pedido_senha: new Date().toISOString() });
+    if (linkPorEmail()) {
+      const link = `${process.env.APP_URL.replace(/\/+$/, "")}/redefinir?t=${token}`;
+      enviar({ para: u.email, assunto: "Nova senha do CrediControle",
+        texto: `Olá, ${u.nome}.\n\nPara criar uma nova senha, abra o link abaixo em até 30 minutos:\n${link}\n\nSe não foi você que pediu, ignore este e-mail: a senha atual continua valendo.` })
+        .catch(e => console.error("e-mail de recuperação:", e.message)); // não espera: o tempo de resposta não pode revelar se o e-mail existe
+    }
+    req.u = u;
+  }
+  audita(req, { acao: "pediu_nova_senha", depois: { email: email.slice(0, 120), existe: !!(u && u.ativo) } });
+  res.json({ ok: true, mensagem: linkPorEmail()
+    ? "Se o e-mail estiver cadastrado, enviamos um link para criar uma nova senha. Ele vale por 30 minutos. Confira também a caixa de spam."
+    : "Se o e-mail estiver cadastrado, o administrador foi avisado e vai definir uma senha provisória para você." });
+}));
+app.post("/api/redefinir", assincrono(async (req, res) => {
+  const token = String(req.body?.token || ""), nova = String(req.body?.nova || "");
+  if (!redefinicoes(req.ipCliente)) return res.status(429).json({ erro: "Muitas tentativas. Espere 15 minutos." });
+  const u = token.length >= 20 ? await db.usuarios.porResetHash(hashToken(token)) : null;
+  if (!u || !u.ativo) return res.status(400).json({ erro: "Este link não vale mais. Peça um novo em “Esqueci minha senha”." });
+  if (!senhaValida(nova)) return res.status(400).json({ erro: ERRO_SENHA });
+  await db.usuarios.alterar(u.id, { senha: await hashSenha(nova), trocar_senha: false, reset_hash: null, reset_expira: null, pedido_senha: null }, true);
+  req.u = u; audita(req, { acao: "redefiniu_senha" });
+  res.json({ ok: true });
+}));
 app.get("/api/eu", exige(null, true), (req, res) => res.json({ id: req.u.id, nome: req.u.nome, email: req.u.email, papel: req.u.papel, rota: req.u.rota || "", trocarSenha: req.u.trocar_senha }));
 const trocas = limitador(10, 15 * 60e3);
 app.post("/api/minha-senha", exige(null, true), assincrono(async (req, res) => {
@@ -216,6 +256,7 @@ async function aplica(q, u, { op, col, id, dados, base }, opc = {}) {
   if (motivo) throw recusa(403, motivo);
   const problema = novo && invalido(col, id, novo);
   if (problema) throw recusa(400, problema);
+  if (col === "clientes" && !antes && novo) { const f = faltamNoCliente(novo); if (f.length) throw recusa(400, `Preencha: ${f.join(", ")}.`); }
   let versao = null;
   try {
     if (op === "excluir") await db.excluir(col, id, q);
@@ -266,6 +307,8 @@ const PAPEIS = ["admin", "operador"];
 const resumoUsuario = u => ({ nome: u.nome, email: u.email, papel: u.papel, ativo: u.ativo, rota: u.rota || "" });
 const rotaDe = v => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, 30);
 app.get("/api/usuarios", exige("admin"), assincrono(async (req, res) => res.json(await db.usuarios.listar())));
+app.get("/api/rotas", exige("admin"), assincrono(async (req, res) =>
+  res.json(String(((await db.ler("config", "geral")) || {}).rotas || "").split(",").map(x => x.trim()).filter(Boolean))));
 app.post("/api/usuarios", exige("admin"), assincrono(async (req, res) => {
   const nome = String(req.body?.nome || "").trim(), email = String(req.body?.email || "").trim().toLowerCase();
   const senha = String(req.body?.senha || ""), papel = PAPEIS.includes(req.body?.papel) ? req.body.papel : "operador";
@@ -289,14 +332,23 @@ app.patch("/api/usuarios/:id", exige("admin"), assincrono(async (req, res) => {
   if (PAPEIS.includes(b.papel)) campos.papel = b.papel;
   if (typeof b.nome === "string" && b.nome.trim()) campos.nome = b.nome.trim().slice(0, 120);
   if (typeof b.rota === "string") campos.rota = rotaDe(b.rota);
+  if (typeof b.email === "string" && b.email.trim().toLowerCase() !== alvo.email) {
+    const email = b.email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ erro: "E-mail inválido." });
+    const outro = await db.usuarios.porEmail(email);
+    if (outro && outro.id !== id) return res.status(409).json({ erro: "Já existe um usuário com esse e-mail." });
+    campos.email = email;
+  }
+  if ((campos.papel || alvo.papel) === "admin") campos.rota = ""; // administrador vê tudo: não tem rota
   if (b.senha !== undefined) {
     if (!senhaValida(String(b.senha))) return res.status(400).json({ erro: ERRO_SENHA });
     campos.senha = await hashSenha(String(b.senha));
     campos.trocar_senha = true; // senha definida pelo administrador: a pessoa troca no próximo acesso
+    Object.assign(campos, { pedido_senha: null, reset_hash: null, reset_expira: null }); // atende o pedido de nova senha
   }
   // senha nova, desativação ou mudança de papel derrubam os logins abertos dessa pessoa
   await db.usuarios.alterar(id, campos, campos.senha !== undefined || campos.ativo === false || (campos.papel !== undefined && campos.papel !== alvo.papel));
-  const { senha, ...semSenha } = campos;
+  const { senha, reset_hash, reset_expira, pedido_senha, ...semSenha } = campos;
   audita(req, { acao: "usuario_alterado", colecao: "usuarios", id: String(id), antes: resumoUsuario(alvo), depois: { ...semSenha, ...(senha ? { senhaRedefinida: true } : {}) } });
   res.json({ ok: true });
 }));

@@ -132,6 +132,8 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:60
 @media (max-width:420px){.kpis{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){aside{transition:none}}
 [hidden]{display:none!important}
+.falta{border-color:var(--bad)!important;background:var(--bad-soft)!important}
+.alerta-form{background:var(--bad-soft);color:var(--bad);padding:10px 14px;border-radius:8px;font-weight:600}
 .grp td{background:var(--surface-2);padding-top:12px}
 .tbl tr.grp:hover td{background:var(--surface-2)}
 .semBaixa [data-act="pagar"]{display:none!important}
@@ -597,9 +599,27 @@ function verContrato(id){
 }
 
 /* ---------- formulários ---------- */
+// Campos obrigatórios do cliente (os mesmos do formulário público). Só e-mail, indicação e observações são livres.
+function cpfOk(s){const c=String(s||"").replace(/\D/g,"");if(!/^\d{11}$/.test(c)||/^(\d)\1{10}$/.test(c))return false;
+  const dv=n=>{let t=0;for(let i=0;i<n;i++)t+=+c[i]*(n+1-i);const r=t*10%11;return r===10?0:r};return dv(9)===+c[9]&&dv(10)===+c[10]}
+const OBRIG_CLI=[["nome",v=>v.trim().length>=5&&v.trim().includes(" "),"nome completo"],["cpf",cpfOk,"CPF válido"],
+  ["rg",v=>v.replace(/[^0-9A-Za-z]/g,"").length>=5,"RG"],["telefone",v=>v.replace(/\D/g,"").length>=10,"telefone com DDD"],
+  ["endereco",v=>v.trim().length>=8,"endereço residencial"],["profissao",v=>!!v.trim(),"profissão"],["empresa",v=>!!v.trim(),"nome da empresa"],
+  ["enderecoTrabalho",v=>v.trim().length>=8,"endereço do local de trabalho"],["tempoRegistro",v=>!!v.trim(),"tempo de carteira"],
+  ["renda",v=>+v>0,"renda mensal"],["referencias",v=>v.split("\n").filter(l=>l.trim()).length>=2,"duas referências (uma por linha)"]];
+// Marca em vermelho o que falta, mostra o alerta no topo do formulário e põe o cursor no primeiro campo. true = tudo certo.
+function confereObrig(f,lista){
+  const faltam=lista.filter(([n,ok])=>{const el=f.elements[n],bad=!ok(String(el.value||""));el.classList.toggle("falta",bad);return bad});
+  let box=f.querySelector(".alerta-form");
+  if(!faltam.length){box&&box.remove();return true}
+  if(!box){box=document.createElement("div");box.className="alerta-form full";box.setAttribute("role","alert");f.prepend(box)}
+  box.textContent="Preencha os campos obrigatórios: "+faltam.map(x=>x[2]).join(", ")+".";
+  f.elements[faltam[0][0]].focus();toast("Faltam campos obrigatórios.");
+  return false;
+}
 function formCliente(c,pre){
   c=c||{};pre=pre||c.status==="pre";
-  openModal(`<h3>${c.id?"Editar cliente":pre?"Novo pré-cadastro":"Novo cliente"}</h3><form id="fCli" class="form">
+  openModal(`<h3>${c.id?"Editar cliente":pre?"Novo pré-cadastro":"Novo cliente"}</h3><div class="muted" style="margin-top:-8px">Todos os campos são obrigatórios, menos e-mail, indicação e observações.</div><form id="fCli" class="form" novalidate>
     <label class="f full">Nome completo<input name="nome" required style="text-transform:uppercase" value="${esc(c.nome)}"></label>
     <label class="f">CPF<input name="cpf" inputmode="numeric" value="${esc(c.cpf)}"></label>
     <label class="f">RG<input name="rg" style="text-transform:uppercase" value="${esc(c.rg)}"></label>
@@ -617,7 +637,8 @@ function formCliente(c,pre){
     <label class="f full">Observações<textarea name="obs">${esc(c.obs)}</textarea></label>
     <label class="f full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500;color:var(--fg)"><input type="checkbox" name="semLembrete" style="width:auto" ${c.semLembrete?"checked":""}>Não mandar lembretes de vencimento pelo WhatsApp</label>
     <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Salvar</button></div></form>`);
-  $("#fCli").onsubmit=async e=>{e.preventDefault();const d=formData(e.target);
+  $("#fCli").oninput=e=>{if(e.target.classList.contains("falta"))confereObrig($("#fCli"),OBRIG_CLI.filter(x=>x[0]===e.target.name||$("#fCli").elements[x[0]].classList.contains("falta")))};
+  $("#fCli").onsubmit=async e=>{e.preventDefault();if(!confereObrig(e.target,OBRIG_CLI))return;const d=formData(e.target);
     const o={...c,...d,id:c.id||uid("cl"),status:c.status||(pre?"pre":"ativo"),criadoEm:c.criadoEm||new Date().toISOString()};
     o.renda=o.renda?+o.renda:null;
     for(const k of ["nome","rg","endereco","empresa","enderecoTrabalho","indicacao","profissao"])if(typeof o[k]==="string")o[k]=o[k].trim().replace(/\s+/g," ").toLocaleUpperCase("pt-BR"); // padrão do contrato

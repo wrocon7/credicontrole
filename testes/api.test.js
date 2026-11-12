@@ -2,6 +2,8 @@
 // Uso: npm test
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,9 +11,12 @@ const raiz = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORTA = 3399, BASE = `http://127.0.0.1:${PORTA}`;
 const senhaNova = () => crypto.randomBytes(9).toString("base64url");
 const ADMIN = { email: "admin@teste.local", senha: senhaNova() };
+const EMAILS = path.join(os.tmpdir(), `cc-emails-${process.pid}.jsonl`);
+const FICHA = { cpf: "529.982.247-25", rg: "1234567 SPTC/ES", telefone: "(27) 99999-0000", endereco: "RUA A, 1 · CENTRO · SERRA/ES", profissao: "CAIXA",
+  empresa: "LOJA X", enderecoTrabalho: "RUA B, 2, CENTRO, SERRA", tempoRegistro: "1 ANO", renda: 2000, referencias: "ANA (MÃE) — (27) 98888-0000\nRUI (PAI) — (27) 97777-0000" };
 const srv = spawn(process.execPath, ["server.js"], {
   cwd: raiz,
-  env: { ...process.env, DATABASE_URL: "", PGLITE_DIR: ":memory:", PORT: String(PORTA), SESSION_SECRET: crypto.randomBytes(16).toString("hex"), ADMIN_EMAIL: ADMIN.email, ADMIN_SENHA: ADMIN.senha },
+  env: { ...process.env, DATABASE_URL: "", PGLITE_DIR: ":memory:", PORT: String(PORTA), SESSION_SECRET: crypto.randomBytes(16).toString("hex"), ADMIN_EMAIL: ADMIN.email, ADMIN_SENHA: ADMIN.senha, EMAIL_ARQUIVO: EMAILS, APP_URL: BASE },
 });
 let saida = "";
 srv.stdout.on("data", d => (saida += d)); srv.stderr.on("data", d => (saida += d));
@@ -62,7 +67,9 @@ try {
   confere("API não fica em cache", (await chama("GET", "/api/dados", null, adm)).h.get("cache-control") === "no-store");
 
   // documentos
-  confere("grava documento", (await chama("PUT", "/api/doc/clientes/c1", { nome: "Fulano de Tal", status: "ativo" }, adm)).status === 200);
+  confere("grava documento", (await chama("PUT", "/api/doc/clientes/c1", { ...FICHA, nome: "Fulano de Tal", status: "ativo" }, adm)).status === 200);
+  const incompleto = await chama("PUT", "/api/doc/clientes/c0", { nome: "Hugo Demuner", cpf: "529.982.247-25", telefone: "(27) 99999-0000", status: "ativo" }, adm);
+  confere("cliente novo sem os campos obrigatórios é recusado e diz o que falta", incompleto.status === 400 && ["RG", "profissão", "renda mensal", "duas referências (uma por linha)"].every(c => incompleto.json?.erro.includes(c)), JSON.stringify(incompleto.json));
   const tudo = await chama("GET", "/api/dados", null, adm), v1 = tudo.json.versao;
   confere("lista traz o documento", tudo.json.docs.some(d => d.id === "c1" && d.dados.nome === "Fulano de Tal"));
   await chama("PATCH", "/api/doc/clientes/c1", { cpf: "529.982.247-25" }, adm);
@@ -118,8 +125,8 @@ try {
   const m2 = { id: "m2", data: "2026-01-25", valor: 50 }, m3 = { id: "m3", data: "2026-02-01", valor: 20 };
   // rotas e liberação de baixa: o administrador configura, cria um cliente em cada rota
   await chama("PUT", "/api/doc/config/geral", { nome: "Teste", rotas: "Rota 1, Rota 2", operadorRecebe: true }, adm);
-  await chama("PUT", "/api/doc/clientes/cx", { nome: "CLIENTE DA ROTA 1", cpf: "111", rg: "RG1", status: "ativo", rota: "Rota 1" }, adm);
-  await chama("PUT", "/api/doc/clientes/cy", { nome: "CLIENTE DA ROTA 2", cpf: "222", rg: "RG2", telefone: "(27) 91111-2222", status: "ativo", rota: "Rota 2" }, adm);
+  await chama("PUT", "/api/doc/clientes/cx", { ...FICHA, nome: "CLIENTE DA ROTA 1", cpf: "111.444.777-35", rg: "RG1 SPTC", status: "ativo", rota: "Rota 1" }, adm);
+  await chama("PUT", "/api/doc/clientes/cy", { ...FICHA, nome: "CLIENTE DA ROTA 2", cpf: "123.456.789-09", rg: "RG2 SPTC", telefone: "(27) 91111-2222", status: "ativo", rota: "Rota 2" }, adm);
   confere("/api/eu informa a rota do operador", (await chama("GET", "/api/eu", null, opc)).json?.rota === "Rota 1");
   const semMov = { ...saldo, movimentos: [] };
   confere("operador não lança contrato já com pagamento", (await chama("PUT", k1, saldo, opc)).status === 403);
@@ -173,21 +180,21 @@ try {
   // rotas: o que o operador vê e altera
   await chama("PUT", "/api/doc/contratos/ky", { ...semMov, clienteId: "cy" }, adm);
   const visto = (await chama("GET", "/api/dados", null, opc)).json.docs, cyOp = visto.find(d => d.id === "cy")?.dados || {};
-  confere("operador vê só o resumo do cliente de outra rota", cyOp._resumo === true && cyOp.nome === "CLIENTE DA ROTA 2" && cyOp.rg === "RG2" && cyOp.status === "ativo" && !("cpf" in cyOp) && !("telefone" in cyOp), JSON.stringify(cyOp));
-  confere("operador não recebe contratos de outra rota e recebe os da sua", !visto.some(d => d.id === "ky") && visto.some(d => d.id === "k1") && visto.find(d => d.id === "cx")?.dados.cpf === "111");
+  confere("operador vê só o resumo do cliente de outra rota", cyOp._resumo === true && cyOp.nome === "CLIENTE DA ROTA 2" && cyOp.rg === "RG2 SPTC" && cyOp.status === "ativo" && !("cpf" in cyOp) && !("telefone" in cyOp), JSON.stringify(cyOp));
+  confere("operador não recebe contratos de outra rota e recebe os da sua", !visto.some(d => d.id === "ky") && visto.some(d => d.id === "k1") && visto.find(d => d.id === "cx")?.dados.cpf === "111.444.777-35");
   const parcial = (await chama("GET", "/api/dados?desde=1", null, opc)).json.docs;
   confere("na busca por mudanças, o que é de outra rota também não vem", !parcial.some(d => d.id === "ky" && !d.excluido) && !parcial.some(d => d.id === "cy" && d.dados.cpf));
   confere("operador não altera cliente nem contrato de outra rota", (await chama("PATCH", "/api/doc/clientes/cy", { telefone: "x" }, opc)).status === 403
     && (await chama("PATCH", "/api/doc/contratos/ky", { obs: "x" }, opc)).status === 403 && (await chama("PUT", "/api/doc/contratos/kz", { ...semMov, clienteId: "cy" }, opc)).status === 403);
   confere("operador não muda a rota de um cliente", (await chama("PATCH", "/api/doc/clientes/cx", { rota: "Rota 2" }, opc)).status === 403);
-  await chama("PUT", "/api/doc/clientes/cn", { nome: "NOVO DO OPERADOR", status: "ativo", rota: "Rota 2" }, opc);
+  await chama("PUT", "/api/doc/clientes/cn", { ...FICHA, nome: "NOVO DO OPERADOR", status: "ativo", rota: "Rota 2" }, opc);
   confere("cliente criado pelo operador cai na rota dele", (await docs()).find(d => d.id === "cn")?.dados.rota === "Rota 1");
   await chama("PUT", "/api/doc/config/geral", { nome: "Teste", rotas: "Rota 1, Rota 2", operadorRecebe: false }, adm);
   confere("sem liberação, operador não dá baixa", (await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2, m3, { id: "m4", data: "2026-02-05", valor: 5 }] }, opc)).status === 403
     && (await chama("PUT", "/api/doc/transacoes/t11", { tipo: "entrada", valor: 5, data: "2026-02-05", contratoId: "k1", clienteId: "cx" }, opc)).status === 403);
   confere("operador não lança saída no caixa", (await chama("PUT", "/api/doc/transacoes/t12", { tipo: "saida", valor: 5, data: "2026-02-05", contratoId: "k1", clienteId: "cx" }, opc)).status === 403);
   confere("administrador continua dando baixa", (await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2, m3, { id: "m4", data: "2026-02-05", valor: 5 }] }, adm)).status === 200);
-  await chama("PUT", "/api/doc/clientes/p1", { nome: "Pré Teste", status: "pre" }, opc);
+  await chama("PUT", "/api/doc/clientes/p1", { ...FICHA, nome: "Pré Teste", status: "pre" }, opc);
   confere("operador marca cliente como avisado (lembrete manual)", (await chama("PUT", "/api/doc/avisos/k1_saldo_2026-11-03_1", { quando: new Date().toISOString(), por: "Operador Teste", contratoId: "k1", clienteId: "cx" }, opc)).status === 200);
   confere("operador recusa (exclui) pré-cadastro", (await chama("DELETE", "/api/doc/clientes/p1", null, opc)).status === 200);
   confere("administrador exclui contrato", (await chama("DELETE", "/api/doc/contratos/k1", null, adm)).status === 200);
@@ -223,6 +230,31 @@ try {
   let ultimo;
   for (let i = 0; i < 11; i++) ultimo = await chama("POST", "/api/login", { email: "ninguem@teste.local", senha: "x" });
   confere("limite de tentativas de login", ultimo.status === 429);
+
+  // administrador edita outro usuário: nome, e-mail, papel e rota
+  const ed = await chama("PATCH", `/api/usuarios/${novo.json.id}`, { nome: "Operador Renomeado", email: "op2@teste.local", rota: "Rota 2" }, adm);
+  const lista = (await chama("GET", "/api/usuarios", null, adm)).json || [], opEd = lista.find(u => u.id === novo.json.id) || {};
+  confere("administrador muda nome, e-mail e rota de outro usuário", ed.status === 200 && opEd.nome === "Operador Renomeado" && opEd.email === "op2@teste.local" && opEd.rota === "Rota 2", JSON.stringify(opEd));
+  confere("e-mail de outro usuário não pode ser repetido", (await chama("PATCH", `/api/usuarios/${novo.json.id}`, { email: ADMIN.email }, adm)).status === 409);
+  confere("lista de rotas para o administrador", JSON.stringify((await chama("GET", "/api/rotas", null, adm)).json) === JSON.stringify(["Rota 1", "Rota 2"]));
+  confere("operador não lista rotas nem edita usuários", (await chama("GET", "/api/rotas", null, opc)).status !== 200);
+
+  // recuperação de senha
+  await chama("PATCH", `/api/usuarios/${novo.json.id}`, { ativo: true }, adm);
+  const pNada = await chama("POST", "/api/esqueci", { email: "nao-existe@teste.local" }), pOp = await chama("POST", "/api/esqueci", { email: "op2@teste.local" });
+  confere("pedido de nova senha responde igual para e-mail que existe e que não existe", pNada.status === 200 && pOp.status === 200 && pNada.json.mensagem === pOp.json.mensagem);
+  await new Promise(r => setTimeout(r, 300));
+  const emails = fs.existsSync(EMAILS) ? fs.readFileSync(EMAILS, "utf8").trim().split("\n").map(l => JSON.parse(l)) : [];
+  const msg = emails.find(m => (m.to?.[0]?.address || m.envelope?.to?.[0]) === "op2@teste.local");
+  const token = (msg?.text || "").match(/\/redefinir\?t=([A-Za-z0-9_-]+)/)?.[1];
+  confere("o e-mail sai só para quem existe e leva o link", emails.length === 1 && !!token, JSON.stringify(emails.map(m => m.to)));
+  confere("administrador vê que a pessoa pediu nova senha", !!((await chama("GET", "/api/usuarios", null, adm)).json.find(u => u.id === novo.json.id)?.pedido_senha));
+  confere("link falso não troca a senha", (await chama("POST", "/api/redefinir", { token: "x".repeat(43), nova: "qualquer-1234" })).status === 400);
+  const nova3 = senhaNova(), red = await chama("POST", "/api/redefinir", { token, nova: nova3 });
+  confere("link do e-mail troca a senha", red.status === 200 && !!(await entra("op2@teste.local", nova3)));
+  confere("o mesmo link não serve duas vezes", (await chama("POST", "/api/redefinir", { token, nova: senhaNova() })).status === 400);
+  confere("depois de trocar, o pedido sai da lista do administrador", !(await chama("GET", "/api/usuarios", null, adm)).json.find(u => u.id === novo.json.id)?.pedido_senha);
+  fs.rmSync(EMAILS, { force: true });
   let n = 0;
   while (n < 45 && (ultimo = await chama("POST", "/api/login", { email: `mais${n}@teste.local`, senha: "x" })).status === 401) n++;
   confere("limite por aparelho, mesmo trocando de e-mail a cada tentativa", ultimo.status === 429 && n < 40, `parou em ${n} com ${ultimo.status}`);

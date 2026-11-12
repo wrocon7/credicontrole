@@ -51,6 +51,10 @@ export async function migrar() {
   if (!tinhaTroca) await pool.query("update usuarios set trocar_senha = true");
   // rota do operador: ele vê por inteiro e altera só os clientes da própria rota (administrador não tem rota)
   await pool.query("alter table usuarios add column if not exists rota text not null default ''");
+  // recuperação de senha: hash do token do link (o token em si nunca é guardado), validade e quando pediu
+  await pool.query("alter table usuarios add column if not exists reset_hash text");
+  await pool.query("alter table usuarios add column if not exists reset_expira timestamptz");
+  await pool.query("alter table usuarios add column if not exists pedido_senha timestamptz");
   // um registro por lembrete (contrato + parcela + vencimento + dia do aviso): garante que ninguém recebe duas vezes
   await pool.query(`create table if not exists lembretes(
     chave text primary key, quando timestamptz not null default now(), contrato_id text, cliente_id text, nome text,
@@ -177,8 +181,9 @@ export const lembretes = {
 export const usuarios = {
   contar: async () => Number((await pool.query("select count(*) as n from usuarios")).rows[0].n),
   porEmail: async email => (await pool.query("select * from usuarios where lower(email) = lower($1)", [email])).rows[0] || null,
+  porResetHash: async hash => (await pool.query("select * from usuarios where reset_hash = $1 and reset_expira > now()", [hash])).rows[0] || null,
   porId: async id => (await pool.query("select * from usuarios where id = $1", [id])).rows[0] || null,
-  listar: async () => (await pool.query("select id, email, nome, papel, ativo, trocar_senha, rota, criado from usuarios order by nome")).rows,
+  listar: async () => (await pool.query("select id, email, nome, papel, ativo, trocar_senha, rota, pedido_senha, criado from usuarios order by nome")).rows,
   criar: async ({ email, nome, senha, papel, trocarSenha = true, rota = "" }) =>
     (await pool.query("insert into usuarios (email, nome, senha, papel, trocar_senha, rota) values ($1, $2, $3, $4, $5, $6) returning id",
       [email, nome, senha, papel, trocarSenha, rota])).rows[0].id,

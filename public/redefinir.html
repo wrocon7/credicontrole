@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Nova senha · CrediControle</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Figtree:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/assets/base.css">
+</head>
+<body>
+<main class="page narrow">
+  <div class="brand"><i>C</i>CrediControle</div>
+  <div class="card">
+    <h1>Criar nova senha</h1>
+    <div id="feito" class="ok" hidden>Senha alterada. <a href="/login" style="color:var(--accent)">Entrar agora</a></div>
+    <form id="f" class="form">
+      <label class="f">Nova senha (8+ caracteres)<input name="nova" type="password" autocomplete="new-password" minlength="8" required autofocus></label>
+      <label class="f">Repita a nova senha<input name="repete" type="password" autocomplete="new-password" minlength="8" required></label>
+      <div id="erro" class="erro" hidden></div>
+      <button class="pri" type="submit">Salvar nova senha</button>
+    </form>
+  </div>
+</main>
+<script>
+// o token vem no link do e-mail; sai da barra de endereço assim que a página abre
+const token = new URLSearchParams(location.search).get("t") || "";
+history.replaceState(null, "", "/redefinir");
+const f = document.getElementById("f"), erro = document.getElementById("erro");
+const falha = m => { erro.textContent = m; erro.hidden = false; };
+if (!token) { f.querySelector("button").disabled = true; falha("Link incompleto. Abra de novo o link que chegou no e-mail ou peça outro em “Esqueci minha senha”."); }
+f.onsubmit = async e => {
+  e.preventDefault(); erro.hidden = true;
+  if (f.nova.value !== f.repete.value) return falha("As duas senhas não são iguais.");
+  const b = f.querySelector("button"); b.disabled = true;
+  try {
+    const r = await fetch("/api/redefinir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, nova: f.nova.value }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || "Não foi possível salvar.");
+    f.hidden = true; document.getElementById("feito").hidden = false;
+  } catch (x) { falha(x.message); b.disabled = false; }
+};
+</script>
+</body>
+</html>
