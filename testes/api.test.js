@@ -79,6 +79,10 @@ try {
   const inc2 = await chama("GET", `/api/dados?desde=${inc.json.versao}`, null, adm);
   confere("exclusão chega na busca incremental", inc2.json.docs.some(d => d.id === "c1" && d.excluido));
   confere("exclusão some da lista completa", !(await chama("GET", "/api/dados", null, adm)).json.docs.some(d => d.id === "c1"));
+  confere("CPF com dígito errado é recusado no cadastro", (await chama("PUT", "/api/doc/clientes/c9", { ...FICHA, nome: "Teste Cpf Errado", cpf: "529.982.247-26", status: "ativo" }, adm)).status === 400);
+  await chama("PUT", "/api/doc/clientes/c8", { ...FICHA, nome: "Teste Cpf Certo", status: "ativo" }, adm);
+  confere("trocar o CPF de uma ficha por um inválido é recusado", (await chama("PATCH", "/api/doc/clientes/c8", { cpf: "111.111.111-11" }, adm)).status === 400);
+  confere("trocar o CPF por um válido passa", (await chama("PATCH", "/api/doc/clientes/c8", { cpf: "390.533.447-05" }, adm)).status === 200);
   confere("coleção desconhecida dá 400", (await chama("PUT", "/api/doc/senhas/x", { a: 1 }, adm)).status === 400);
   confere("mesclar documento inexistente dá 404", (await chama("PATCH", "/api/doc/clientes/nao-existe", { a: 1 }, adm)).status === 404);
 

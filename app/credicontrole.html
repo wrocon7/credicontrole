@@ -621,7 +621,7 @@ function formCliente(c,pre){
   c=c||{};pre=pre||c.status==="pre";
   openModal(`<h3>${c.id?"Editar cliente":pre?"Novo pré-cadastro":"Novo cliente"}</h3><div class="muted" style="margin-top:-8px">Todos os campos são obrigatórios, menos e-mail, indicação e observações.</div><form id="fCli" class="form" novalidate>
     <label class="f full">Nome completo<input name="nome" required style="text-transform:uppercase" value="${esc(c.nome)}"></label>
-    <label class="f">CPF<input name="cpf" inputmode="numeric" value="${esc(c.cpf)}"></label>
+    <label class="f">CPF<input name="cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" value="${esc(c.cpf)}"><span id="cpfAviso" style="font-weight:600;color:var(--bad)" hidden>CPF inválido: confira os números.</span></label>
     <label class="f">RG<input name="rg" style="text-transform:uppercase" value="${esc(c.rg)}"></label>
     <label class="f">Telefone (WhatsApp)<input name="telefone" inputmode="tel" placeholder="(27) 98888-7777" value="${esc(c.telefone)}"></label>
     <label class="f">E-mail<input name="email" type="email" value="${esc(c.email)}"></label>
@@ -637,7 +637,11 @@ function formCliente(c,pre){
     <label class="f full">Observações<textarea name="obs">${esc(c.obs)}</textarea></label>
     <label class="f full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500;color:var(--fg)"><input type="checkbox" name="semLembrete" style="width:auto" ${c.semLembrete?"checked":""}>Não mandar lembretes de vencimento pelo WhatsApp</label>
     <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Salvar</button></div></form>`);
-  $("#fCli").oninput=e=>{if(e.target.classList.contains("falta"))confereObrig($("#fCli"),OBRIG_CLI.filter(x=>x[0]===e.target.name||$("#fCli").elements[x[0]].classList.contains("falta")))};
+  // CPF: máscara e aviso assim que os 11 números estão digitados
+  const cpfIn=$("#fCli").elements.cpf,avisoCpf=n=>{const d=cpfIn.value.replace(/\D/g,"").length,ruim=(d===11||(n&&d>0))&&!cpfOk(cpfIn.value);$("#cpfAviso").hidden=!ruim;cpfIn.classList.toggle("falta",ruim)};
+  cpfIn.addEventListener("input",()=>{const d=cpfIn.value.replace(/\D/g,"").slice(0,11);cpfIn.value=d.replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d{1,2})$/,"$1-$2");avisoCpf(false)});
+  cpfIn.addEventListener("blur",()=>avisoCpf(true));
+  $("#fCli").oninput=e=>{if(e.target===cpfIn)return;if(e.target.classList.contains("falta"))confereObrig($("#fCli"),OBRIG_CLI.filter(x=>x[0]===e.target.name||$("#fCli").elements[x[0]].classList.contains("falta")))};
   $("#fCli").onsubmit=async e=>{e.preventDefault();if(!confereObrig(e.target,OBRIG_CLI))return;const d=formData(e.target);
     const o={...c,...d,id:c.id||uid("cl"),status:c.status||(pre?"pre":"ativo"),criadoEm:c.criadoEm||new Date().toISOString()};
     o.renda=o.renda?+o.renda:null;

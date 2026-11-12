@@ -257,6 +257,9 @@ async function aplica(q, u, { op, col, id, dados, base }, opc = {}) {
   const problema = novo && invalido(col, id, novo);
   if (problema) throw recusa(400, problema);
   if (col === "clientes" && !antes && novo) { const f = faltamNoCliente(novo); if (f.length) throw recusa(400, `Preencha: ${f.join(", ")}.`); }
+  // CPF trocado numa ficha que já existe também precisa ter os dígitos certos (fichas antigas sem mudança no CPF passam)
+  if (col === "clientes" && antes && novo && (novo.cpf || "") !== (antes.cpf || "") && !cpfValido(String(novo.cpf || "").replace(/\D/g, "")))
+    throw recusa(400, "CPF inválido: confira os números.");
   let versao = null;
   try {
     if (op === "excluir") await db.excluir(col, id, q);

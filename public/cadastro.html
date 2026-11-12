@@ -21,7 +21,7 @@
   <form id="f" autocomplete="on">
     <section class="card"><h2>Dados pessoais</h2><div class="form">
       <label class="f">Nome completo<input name="nome" class="mai" required minlength="5" autocomplete="name"></label>
-      <label class="f s3">CPF<input name="cpf" required inputmode="numeric" placeholder="000.000.000-00" maxlength="14"></label>
+      <label class="f s3">CPF<input name="cpf" required inputmode="numeric" placeholder="000.000.000-00" maxlength="14"><span id="cpfAviso" class="muted" style="font-weight:600;color:var(--bad)" hidden>CPF inválido: confira os números.</span></label>
       <label class="f s3">RG<input name="rg" class="mai" required placeholder="Número e órgão, ex.: 1234567 SPTC/ES"></label>
       <label class="f">Telefone (WhatsApp)<input name="telefone" required inputmode="tel" autocomplete="tel" placeholder="(27) 99999-9999" maxlength="15"></label>
     </div></section>
@@ -78,6 +78,18 @@ const MASCARA = {
 };
 for (const [nome, m] of [["cpf", "cpf"], ["telefone", "tel"], ["ref1Telefone", "tel"], ["ref2Telefone", "tel"], ["cep", "cep"]])
   f.elements[nome].addEventListener("input", e => { e.target.value = MASCARA[m](e.target.value); });
+
+// CPF: confere os dígitos verificadores assim que os 11 números estão digitados (e ao sair do campo).
+function cpfOk(s){const c=String(s||"").replace(/\D/g,"");if(!/^\d{11}$/.test(c)||/^(\d)\1{10}$/.test(c))return false;
+  const dv=n=>{let t=0;for(let i=0;i<n;i++)t+=+c[i]*(n+1-i);const r=t*10%11;return r===10?0:r};return dv(9)===+c[9]&&dv(10)===+c[10]}
+function confereCpf(fim) {
+  const el = f.cpf, n = el.value.replace(/\D/g, "").length, ruim = (n === 11 || (fim && n > 0)) && !cpfOk(el.value);
+  document.getElementById("cpfAviso").hidden = !ruim;
+  el.style.borderColor = ruim ? "var(--bad)" : "";
+  el.setCustomValidity(ruim ? "CPF inválido: confira os números." : ""); // o navegador não deixa enviar com CPF errado
+}
+f.cpf.addEventListener("input", () => confereCpf(false));
+f.cpf.addEventListener("blur", () => confereCpf(true));
 
 // Endereço pelo CEP: ViaCEP (base dos Correios) e, se não achar ou estiver fora do ar, a BrasilAPI, que consulta outras fontes.
 async function buscaCep(cep) {
