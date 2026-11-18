@@ -75,8 +75,8 @@ a pasta com o app parado.
 
 - **Rotas:** cadastre os nomes em **Configurações → Rotas** (ex.: `Rota 1, Rota 2, Rota 3`). Em **Usuários**, ligue cada
   operador a uma rota. Na ficha do cliente, o administrador escolhe a rota; cliente criado pelo operador cai na rota dele.
-- **O que o operador vê:** por inteiro, só os clientes, contratos e pagamentos da própria rota. Em Clientes → "Todas as
-  rotas" aparecem os das outras rotas só com nome, identidade, rota e se está ativo. O servidor não entrega o resto.
+- **O que o operador vê:** só os clientes, contratos e pagamentos da própria rota. Os das outras rotas não saem
+  do servidor.
 - **Contrato lançado pelo operador** fica **Aguardando Pix**: não entra no painel, nas cobranças nem nos lembretes, e
   não recebe pagamento. O administrador abre o contrato e clica em **Confirmar Pix** (informa a data): o contrato passa
   a valer nessa data e a saída entra no caixa. Contrato criado pelo administrador já nasce ativo.

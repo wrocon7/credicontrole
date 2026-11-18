@@ -446,23 +446,21 @@ function cliRows(list){
   if(!list.length)return `<div class="empty"><b>Nenhum cliente aqui</b>Use “Novo cliente” para cadastrar o primeiro.</div>`;
   const {vis,resto}=corta(list,"cliMax");
   return `<div class="tbl"><table><thead><tr><th>Nome</th><th>CPF</th><th>RG</th><th>Telefone</th><th>Rota</th><th>Situação</th><th class="num">Contratos</th><th class="num">Saldo devedor</th></tr></thead><tbody>${vis.map(c=>{
-    // cliente de outra rota: o servidor só entrega nome, identidade, rota e se está ativo
-    if(c._resumo)return `<tr><td><b>${esc(c.nome)}</b></td><td class="muted">—</td><td>${esc(c.rg||"—")}</td><td class="muted">—</td><td>${esc(c.rota||"—")}</td><td>${c.status==="inativo"?'<span class="pill">Inativo</span>':'<span class="pill ok">Ativo</span>'}</td><td class="num muted">—</td><td class="num muted">—</td></tr>`;
     const cs=conDe(c.id).filter(k=>!k.cancelado&&!k.pendente),sd=cs.reduce((a,k)=>a+saldoContrato(k),0),at=cs.some(k=>statusC(k)==="atrasado");
     const st=c.status==="pre"?'<span class="pill warn">Pré-cadastro</span>':c.status==="bloqueado"?'<span class="pill bad">Bloqueado</span>':at?'<span class="pill bad">Em atraso</span>':'<span class="pill ok">Ativo</span>';
     return `<tr class="click" data-act="verCliente" data-id="${c.id}"><td><b>${esc(c.nome)}</b>${ex(c)}</td><td>${esc(c.cpf||"—")}</td><td>${esc(c.rg||"—")}</td><td>${esc(c.telefone||"—")}</td><td>${esc(c.rota||"—")}</td><td>${st}</td><td class="num">${cs.length}</td><td class="num">${money(sd)}</td></tr>`}).join("")}</tbody></table></div>${resto}`;
 }
 VIEWS.clientes=()=>{
   const q=ui.cliQ.toLowerCase(),adm=souAdmin();
-  const abas=adm?{todas:"Todas as rotas",...Object.fromEntries(rotas().map(r=>[r,r])),"sem rota":"Sem rota"}:{minha:"Minha rota"+(eu().rota?" ("+eu().rota+")":""),todas:"Todas as rotas"};
-  if(!abas[ui.cliRota])ui.cliRota=adm?"todas":"minha";
+  const abas=adm?{todas:"Todas as rotas",...Object.fromEntries(rotas().map(r=>[r,r])),"sem rota":"Sem rota"}:null; // o operador só recebe os clientes da rota dele
+  if(adm&&!abas[ui.cliRota])ui.cliRota="todas";
   let l=S.clientes.filter(c=>c.status!=="pre").filter(c=>!q||[c.nome,c.cpf,c.rg,c.telefone].join(" ").toLowerCase().includes(q));
-  if(ui.cliRota==="minha")l=l.filter(c=>!c._resumo);else if(ui.cliRota==="sem rota")l=l.filter(c=>!c.rota);else if(ui.cliRota!=="todas")l=l.filter(c=>c.rota===ui.cliRota);
+  if(adm&&ui.cliRota==="sem rota")l=l.filter(c=>!c.rota);else if(adm&&ui.cliRota!=="todas")l=l.filter(c=>c.rota===ui.cliRota);
   if(ui.cliSt==="atraso")l=l.filter(c=>conDe(c.id).some(k=>statusC(k)==="atrasado"));
   if(ui.cliSt==="bloqueado")l=l.filter(c=>c.status==="bloqueado");
   l.sort((a,b)=>a.nome.localeCompare(b.nome));
   return `<div class="toolbar"><input type="search" id="cliQ" placeholder="Buscar por nome, CPF, RG ou telefone" value="${esc(ui.cliQ)}" aria-label="Buscar clientes"><div class="tabs">${tabs("cliSt",{todos:"Todos",atraso:"Em atraso",bloqueado:"Bloqueados"})}</div></div>
-  <div class="toolbar"><div class="tabs">${tabs("cliRota",abas)}</div><span class="muted" style="margin-left:auto">${l.length} cliente${l.length===1?"":"s"}</span></div><section class="panel">${cliRows(l)}</section>`;
+  <div class="toolbar">${adm?`<div class="tabs">${tabs("cliRota",abas)}</div>`:`<b>${esc(eu().rota||"Sem rota definida")}</b>`}<span class="muted" style="margin-left:auto">${l.length} cliente${l.length===1?"":"s"}</span></div><section class="panel">${cliRows(l)}</section>`;
 };
 VIEWS.precadastro=()=>{
   const l=S.clientes.filter(c=>c.status==="pre").sort((a,b)=>(b.criadoEm||"").localeCompare(a.criadoEm||""));
@@ -566,7 +564,6 @@ VIEWS.ajustes=()=>`<section class="panel"><header><h2>Padrões da carteira</h2><
 /* ---------- detalhes ---------- */
 function verCliente(id){
   const c=S.clientes.find(x=>x.id===id);if(!c)return;
-  if(c._resumo){toast("Cliente de outra rota: só os dados básicos aparecem.");return}
   const cs=S.contratos.filter(k=>k.clienteId===id).sort((a,b)=>(b.dataContrato||"").localeCompare(a.dataContrato||""));
   openDrawer(`<div class="hd"><div><h2>${esc(c.nome)}${ex(c)}</h2><div class="muted">${c.status==="pre"?"Pré-cadastro":c.status==="bloqueado"?"Bloqueado":"Cliente ativo"}</div></div><button data-act="close" aria-label="Fechar">Fechar</button></div>
   <div class="panel"><div class="body dl">${[["CPF",c.cpf],["RG",c.rg],["Telefone",c.telefone],["E-mail",c.email],["Endereço",c.endereco],["Indicação",c.indicacao],["Profissão",c.profissao],["Empresa",c.empresa],["Endereço do trabalho",c.enderecoTrabalho],["Tempo de carteira",c.tempoRegistro],["Renda mensal",c.renda?money(c.renda):""],["Rota",c.rota],["Origem",c.origem==="link"?"Link de pré-cadastro"+(c.franquia?" · "+c.franquia:""):"Cadastro manual"],["Lembretes no WhatsApp",c.semLembrete?"Não quer receber":"Recebe"],["Cadastrado em",fdate((c.criadoEm||"").slice(0,10))]].map(([k,v])=>`<div><span>${k}</span><b>${esc(v||"—")}</b></div>`).join("")}${c.referencias?`<div style="grid-column:1/-1;white-space:pre-line"><span>Contatos de referência</span>${esc(c.referencias)}</div>`:""}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
@@ -651,7 +648,7 @@ function formCliente(c,pre){
     try{await put("clientes",o);closeTop();toast(c.id?"Cliente atualizado":"Cliente cadastrado");if($(".drawer"))verCliente(o.id)}catch(_){}};
 }
 function formContrato(cliId){
-  const cls=S.clientes.filter(c=>!c._resumo&&(c.status==="ativo"||!c.status)).sort((a,b)=>a.nome.localeCompare(b.nome));
+  const cls=S.clientes.filter(c=>(c.status==="ativo"||!c.status)).sort((a,b)=>a.nome.localeCompare(b.nome));
   if(!cls.length){toast("Cadastre ou aprove um cliente antes de criar o contrato.");return}
   const t=today(),adm=souAdmin();
   openModal(`<h3>Novo contrato</h3>${adm?"":'<div class="banner" style="margin:0">O contrato fica aguardando o administrador confirmar o Pix. Só depois disso ele passa a valer.</div>'}<form id="fCon" class="form">

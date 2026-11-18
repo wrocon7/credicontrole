@@ -189,17 +189,14 @@ app.post("/api/minha-senha", exige(null, true), assincrono(async (req, res) => {
 }));
 
 /* ---------- dados da carteira ---------- */
-// O operador recebe por inteiro só o que é da própria rota. Dos clientes das outras rotas vem um resumo (nome,
-// identidade, rota e se está ativo); contratos, pagamentos e caixa das outras rotas não saem do servidor.
+// O operador recebe só o que é da própria rota: clientes, contratos, pagamentos e caixa das outras rotas não saem do servidor.
 async function visaoDoOperador(u, lista, completa) {
   const rotas = await db.rotasDosClientes(), minha = id => !!u.rota && rotas.get(id) === u.rota;
   const some = d => (completa ? null : { colecao: d.colecao, id: d.id, dados: {}, excluido: true, versao: d.versao });
   return lista.map(d => {
     if (d.excluido || d.colecao === "config") return d;
     if (d.colecao === "clientes") {
-      if (minha(d.id)) return d;
-      if (d.dados.status === "pre") return some(d);
-      return { ...d, dados: { nome: d.dados.nome, rg: d.dados.rg || "", rota: d.dados.rota || "", status: d.dados.status === "bloqueado" ? "inativo" : "ativo", _resumo: true } };
+      return minha(d.id) ? d : some(d);
     }
     return d.dados.clienteId && minha(d.dados.clienteId) ? d : some(d);
   }).filter(Boolean);

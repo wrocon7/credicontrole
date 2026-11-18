@@ -184,10 +184,10 @@ try {
   // rotas: o que o operador vê e altera
   await chama("PUT", "/api/doc/contratos/ky", { ...semMov, clienteId: "cy" }, adm);
   const visto = (await chama("GET", "/api/dados", null, opc)).json.docs, cyOp = visto.find(d => d.id === "cy")?.dados || {};
-  confere("operador vê só o resumo do cliente de outra rota", cyOp._resumo === true && cyOp.nome === "CLIENTE DA ROTA 2" && cyOp.rg === "RG2 SPTC" && cyOp.status === "ativo" && !("cpf" in cyOp) && !("telefone" in cyOp), JSON.stringify(cyOp));
+  confere("operador não recebe cliente de outra rota", !visto.some(d => d.id === "cy"), JSON.stringify(cyOp));
   confere("operador não recebe contratos de outra rota e recebe os da sua", !visto.some(d => d.id === "ky") && visto.some(d => d.id === "k1") && visto.find(d => d.id === "cx")?.dados.cpf === "111.444.777-35");
   const parcial = (await chama("GET", "/api/dados?desde=1", null, opc)).json.docs;
-  confere("na busca por mudanças, o que é de outra rota também não vem", !parcial.some(d => d.id === "ky" && !d.excluido) && !parcial.some(d => d.id === "cy" && d.dados.cpf));
+  confere("na busca por mudanças, o que é de outra rota também não vem", !parcial.some(d => d.id === "ky" && !d.excluido) && !parcial.some(d => d.id === "cy" && !d.excluido));
   confere("operador não altera cliente nem contrato de outra rota", (await chama("PATCH", "/api/doc/clientes/cy", { telefone: "x" }, opc)).status === 403
     && (await chama("PATCH", "/api/doc/contratos/ky", { obs: "x" }, opc)).status === 403 && (await chama("PUT", "/api/doc/contratos/kz", { ...semMov, clienteId: "cy" }, opc)).status === 403);
   confere("operador não muda a rota de um cliente", (await chama("PATCH", "/api/doc/clientes/cx", { rota: "Rota 2" }, opc)).status === 403);
