@@ -760,8 +760,11 @@ function verContrato(id){
   const totalC=r2(ps.reduce((a,p)=>a+p.valor,0)),pago=r2(ps.reduce((a,p)=>a+pagoP(p),0));
   openDrawer(`<div class="hd"><div><h2>Contrato de ${esc(cl.nome)}${ex(c)}</h2><div class="row" style="margin-top:4px">${pillC(c)}<span class="muted">${MOD[c.modalidade]} · ${PER[c.periodicidade]}</span></div></div><button data-act="close">Fechar</button></div>
   ${bannerPend(c)}${bannerInad(c)}<div class="panel"><div class="body dl">${[["Valor emprestado",money(c.valor)],["Taxa",(+c.taxa).toLocaleString("pt-BR")+"% ao período"],["Total do contrato",money(totalC)],["Lucro previsto",money(totalC-c.valor)],["Já recebido",money(pago)],["Saldo em aberto",money(saldoContrato(c))],["Data do contrato",fdate(c.dataContrato)],["Multa / mora",`${esc(c.multa)}% + ${esc(c.mora)}%/dia`]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("")}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
-  <section class="panel"><header><h2>Parcelas</h2></header><div class="tbl"><table><thead><tr><th>#</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Encargos</th><th class="num">Pago</th><th>Situação</th><th></th></tr></thead><tbody>${ps.map(p=>{const e=encargos(p,c);const st=quitadaP(p)?`<span class="pill ok">Paga ${fdate((p.pagamentos.at(-1)||{}).data)}</span>`:e.atraso?`<span class="pill bad">${e.atraso} dias</span>`:e.pago>0?'<span class="pill warn">Parcial</span>':'<span class="pill">Aberta</span>';
-    return `<tr><td>${p.n}</td><td>${fdate(p.venc)}</td><td class="num">${money(p.valor)}</td><td class="num">${quitadaP(p)?"—":money(e.multa+e.mora)}</td><td class="num">${money(e.pago)}</td><td>${st}</td><td><div class="row">${!quitadaP(p)&&!c.cancelado?`<button class="sm pri" data-act="pagar" data-id="${c.id}" data-n="${p.n}">Receber</button><button class="sm" data-act="cobrar" data-id="${c.id}" data-n="${p.n}">Cobrar</button>`:""}${(p.pagamentos||[]).length?`<button class="sm" data-act="estornar" data-id="${c.id}" data-n="${p.n}">Estornar</button>`:""}</div></td></tr>`}).join("")}</tbody></table></div></section>
+  <section class="panel"><header><h2>Parcelas</h2></header><div class="tbl"><table><thead><tr><th>#</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Encargos</th><th class="num">Pago</th><th>Situação</th><th></th></tr></thead><tbody>${ps.map(p=>{const e=encargos(p,c);const st=quitadaP(p)?((p.pagamentos||[]).some(g=>g.repasse)?`<span class="pill warn">Paga a menor ${fdate((p.pagamentos.at(-1)||{}).data)}</span>`:`<span class="pill ok">Paga ${fdate((p.pagamentos.at(-1)||{}).data)}</span>`):e.atraso?`<span class="pill bad">${e.atraso} dias</span>`:e.pago>0?'<span class="pill warn">Parcial</span>':'<span class="pill">Aberta</span>';
+    const nota=t=>`<div class="muted" style="font-family:var(--f-body);font-size:12px;line-height:1.35;white-space:normal;min-width:190px;margin-top:2px">${t}</div>`;
+    const acr=(p.acrescimos||[]).map(a=>nota(`${a.valor?`+ ${money(a.valor)} da parcela ${a.de}`:""}${a.valor&&a.juros?" ":""}${a.juros?`+ ${money(a.juros)} de juros`:""}`)).join("");
+    const rep=(p.pagamentos||[]).filter(g=>g.motivo).map(g=>nota(`${g.repasse?`faltou ${money(g.repasse.valor)} → parcela ${g.repasse.para}`:"pago a menor"} · motivo: ${esc(g.motivo)}`)).join("");
+    return `<tr><td>${p.n}</td><td>${fdate(p.venc)}</td><td class="num">${money(p.valor)}${acr}</td><td class="num">${quitadaP(p)?"—":money(e.multa+e.mora)}</td><td class="num">${money(e.pago)}${rep}</td><td>${st}</td><td><div class="row">${!quitadaP(p)&&!c.cancelado?`<button class="sm pri" data-act="pagar" data-id="${c.id}" data-n="${p.n}">Receber</button><button class="sm" data-act="cobrar" data-id="${c.id}" data-n="${p.n}">Cobrar</button>`:""}${(p.pagamentos||[]).length?`<button class="sm" data-act="estornar" data-id="${c.id}" data-n="${p.n}">Estornar</button>`:""}</div></td></tr>`}).join("")}</tbody></table></div></section>
   <div class="row">${!c.cancelado&&statusC(c)!=="quitado"?`${btnInad(c)}<button data-act="cancelarC" data-id="${id}">Cancelar contrato</button>`:""}<button class="danger" data-act="delContrato" data-id="${id}">Excluir contrato</button><button data-act="verCliente" data-id="${c.clienteId}">Ver cliente</button></div>`);
 }
 
@@ -896,24 +899,54 @@ function formConfirmarPix(cid){
 }
 function formPagar(cid,n){
   const c=S.contratos.find(x=>x.id===cid),p=c&&c.parcelas.find(x=>x.n===n);if(!p)return;
+  const prox=c.parcelas.find(x=>x.n>n&&!quitadaP(x));
   const e=encargos(p,c);
   openModal(`<h3>Receber parcela ${p.n}/${c.parcelas.length} · ${esc(cli(c.clienteId).nome)}</h3>
   <div class="calc"><div><span>Valor da parcela</span><span>${money(p.valor)}</span></div>${e.atraso?`<div><span>Multa (${esc(c.multa)}%)</span><span>${money(e.multa)}</span></div><div><span>Mora (${e.atraso} dias × ${esc(c.mora)}%)</span><span>${money(e.mora)}</span></div>`:""}${e.pago?`<div><span>Já pago</span><span>− ${money(e.pago)}</span></div>`:""}<div class="t"><span>Total devido hoje</span><span>${money(e.devido)}</span></div></div>
   <form id="fPag" class="form"><label class="f">Valor recebido (R$)<input name="valor" type="number" step="0.01" min="0.01" required value="${e.devido.toFixed(2)}"></label>
   <label class="f">Data do pagamento<input name="data" type="date" required value="${today()}"></label>
   <label class="f full">Forma<select name="forma"><option>Pix</option><option>Dinheiro</option><option>Transferência</option><option>Cartão</option></select></label>
-  <p class="muted full" style="margin:0">Se o valor for menor que o devido, a parcela fica com pagamento parcial e o restante continua em aberto.</p>
+  <div id="menor" class="full" hidden style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--warn-bg,#fff8e6)">
+    <b>Pagamento menor que o devido</b> <span class="muted" id="mFaltou"></span>
+    <div class="form" style="margin-top:8px">
+      <label class="f full">Motivo do pagamento menor<input name="motivo" maxlength="300" placeholder="Ex.: cliente pediu para pagar o resto na próxima"></label>
+      <label class="f full">O que faltou<select name="destino">${prox?`<option value="prox">Somar na próxima parcela (${prox.n}/${c.parcelas.length}, vence ${fdate(prox.venc)})</option>`:""}<option value="esta">Deixar em aberto nesta parcela</option></select></label>
+      <label class="f">Juros por atraso (%)<input name="jurosPct" type="number" step="0.01" min="0" placeholder="0"></label>
+      <label class="f">Juros por atraso (R$)<input name="jurosVal" type="number" step="0.01" min="0" placeholder="0,00"></label>
+      <p class="muted full" style="margin:0" id="mResumo"></p>
+    </div>
+  </div>
   <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Registrar recebimento</button></div></form>`);
-  $("#fPag").onsubmit=async ev=>{ev.preventDefault();const d=formData(ev.target),v=r2(+d.valor);
+  // pagamento menor que o devido: pede o motivo, leva o que faltou para a próxima parcela e permite cobrar juros por atraso
+  const f=$("#fPag"),F=k=>f.elements[k];
+  const conta=()=>{const ed=encargos(p,c,F("data").value||today()),v=r2(+F("valor").value||0),faltou=r2(ed.devido-v),menor=v>0&&faltou>0.009;
+    $("#menor").hidden=!menor;F("motivo").required=menor;if(!menor)return;
+    const j=r2(+F("jurosVal").value||0),nx=F("destino").value==="prox"&&prox;
+    $("#mFaltou").textContent="· faltou "+money(faltou);
+    $("#mResumo").textContent=nx?`A parcela ${prox.n} passa de ${money(prox.valor)} para ${money(r2(prox.valor+faltou+j))} (${money(faltou)} que faltou${j?" + "+money(j)+" de juros":""}). Esta parcela fica paga.`
+      :`Ficam em aberto nesta parcela ${money(r2(faltou+j))}${j?" (com "+money(j)+" de juros)":""}.`};
+  f.addEventListener("input",ev=>{const n=ev.target.name;if(n==="jurosPct"||n==="valor"||n==="data"){const ed=encargos(p,c,F("data").value||today()),faltou=Math.max(0,r2(ed.devido-(+F("valor").value||0)));if(F("jurosPct").value!=="")F("jurosVal").value=r2(faltou*(+F("jurosPct").value||0)/100).toFixed(2)}
+    if(n==="jurosVal")F("jurosPct").value="";conta()});
+  f.addEventListener("change",conta);
+  f.onsubmit=async ev=>{ev.preventDefault();const d=formData(ev.target),v=r2(+d.valor);
     // o contrato como está agora: outra pessoa pode ter lançado um pagamento com esta janela aberta
     const c2=S.contratos.find(x=>x.id===cid),p2=c2&&c2.parcelas.find(x=>x.n===n);
     if(!p2||c2.cancelado||quitadaP(p2)){closeTop();toast("Esta parcela não está mais em aberto.");return}
-    const ed=encargos(p2,c2,d.data),txId=uid("tx"),quita=v>=ed.devido-0.009;
+    const ed=encargos(p2,c2,d.data),txId=uid("tx"),faltou=r2(ed.devido-v),menor=faltou>0.009;
     if(v>ed.devido+0.009){toast("O valor passa do total devido ("+money(ed.devido)+").");return}
-    const parcelas=c2.parcelas.map(x=>x.n!==n?x:{...x,pagamentos:[...(x.pagamentos||[]),{data:d.data,valor:v,txId,forma:d.forma}],quitada:quita});
+    const motivo=String(d.motivo||"").trim().slice(0,300),juros=menor?Math.max(0,r2(+d.jurosVal||0)):0;
+    if(menor&&!motivo){toast("Informe o motivo do pagamento menor.");F("motivo").focus();return}
+    const nx=menor&&d.destino==="prox"?c2.parcelas.find(x=>x.n>n&&!quitadaP(x)):null;
+    const pg={data:d.data,valor:v,txId,forma:d.forma,...(menor?{motivo}:{})};
+    let parcelas;
+    if(nx){ // o que faltou (e os juros) vai para a próxima parcela; esta fica paga com o valor recebido
+      const reduz=r2(Math.min(p2.valor,faltou));
+      parcelas=c2.parcelas.map(x=>x.n===n?{...x,valor:r2(x.valor-reduz),valorOriginal:x.valorOriginal??x.valor,pagamentos:[...(x.pagamentos||[]),{...pg,repasse:{valor:faltou,juros,reduz,para:nx.n}}],quitada:true}
+        :x.n===nx.n?{...x,valor:r2(x.valor+faltou+juros),valorOriginal:x.valorOriginal??x.valor,acrescimos:[...(x.acrescimos||[]),{de:n,valor:faltou,juros,txId,motivo}]}:x);
+    }else parcelas=c2.parcelas.map(x=>x.n!==n?x:{...x,...(juros?{valor:r2(x.valor+juros),valorOriginal:x.valorOriginal??x.valor,acrescimos:[...(x.acrescimos||[]),{de:n,valor:0,juros,txId,motivo}]}:{}),pagamentos:[...(x.pagamentos||[]),pg],quitada:!menor});
     try{await gravaJuntos([{op:"mesclar",col:"contratos",id:cid,dados:{parcelas}},
-        {op:"gravar",col:"transacoes",id:txId,dados:{tipo:"entrada",valor:v,data:d.data,categoria:"Recebimento de parcela",descricao:`Parcela ${n}/${c2.parcelas.length} · ${cli(c2.clienteId).nome}`,forma:d.forma,contratoId:cid,clienteId:c2.clienteId,rota:rotaCli(c2.clienteId),criadoEm:new Date().toISOString()}}]);
-      closeTop();toast(quita?"Parcela quitada":"Pagamento parcial registrado");if($(".drawer"))verContrato(cid)}catch(_){}};
+        {op:"gravar",col:"transacoes",id:txId,dados:{tipo:"entrada",valor:v,data:d.data,categoria:"Recebimento de parcela",descricao:`Parcela ${n}/${c2.parcelas.length} · ${cli(c2.clienteId).nome}${menor?" · pagou a menor":""}`,forma:d.forma,contratoId:cid,clienteId:c2.clienteId,rota:rotaCli(c2.clienteId),...(menor?{motivo}:{}),criadoEm:new Date().toISOString()}}]);
+      closeTop();toast(!menor?"Parcela quitada":nx?`Pagamento menor registrado: ${money(r2(faltou+juros))} foram para a parcela ${nx.n}`:"Pagamento parcial registrado");if($(".drawer"))verContrato(cid)}catch(_){}};
 }
 function formPagarSaldo(cid){
   let c=S.contratos.find(x=>x.id===cid);if(!c)return;
@@ -1000,7 +1033,11 @@ function estornar(cid,n){
   confirmar(`Estornar o pagamento de ${money(last.valor)} feito em ${fdate(last.data)}?`,async()=>{
     const c2=S.contratos.find(x=>x.id===cid),p2=c2&&c2.parcelas.find(x=>x.n===n),ult=p2&&(p2.pagamentos||[]).at(-1); // o contrato como está agora
     if(!ult||ult.txId!==last.txId||ult.valor!==last.valor||ult.data!==last.data){toast("O contrato mudou. Abra de novo e confira.");return}
-    const parcelas=c2.parcelas.map(x=>x.n!==n?x:{...x,pagamentos:x.pagamentos.slice(0,-1),quitada:false});
+    // pagamento a menor: devolve o que foi somado na outra parcela (ou nesta, quando ficou os juros aqui)
+    const rp=ult.repasse,alvo=rp&&c2.parcelas.find(x=>x.n===rp.para);
+    if(rp&&(!alvo||(alvo.pagamentos||[]).length)){toast(`Estorne antes os pagamentos da parcela ${rp.para}: ela recebeu o que faltou desta.`);return}
+    const tira=x=>{const a=(x.acrescimos||[]).find(y=>y.txId===ult.txId);return a?{...x,valor:r2(x.valor-a.valor-a.juros),acrescimos:x.acrescimos.filter(y=>y!==a)}:x};
+    const parcelas=c2.parcelas.map(x=>x.n===n?tira({...x,valor:r2(x.valor+(rp?.reduz||0)),pagamentos:x.pagamentos.slice(0,-1),quitada:false}):rp&&x.n===rp.para?tira(x):x);
     try{await gravaJuntos([{op:"mesclar",col:"contratos",id:cid,dados:{parcelas}},...(last.txId?[{op:"excluir",col:"transacoes",id:last.txId}]:[])]);
       toast("Pagamento estornado");setTimeout(()=>verContrato(cid),300)}catch(_){}
   },"Estornar");

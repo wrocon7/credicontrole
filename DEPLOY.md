@@ -230,3 +230,9 @@ O script cria o usuário `volume@teste.local` e grava a senha em `login-volume.t
 - **Importador CSV** do sistema atual (aguardando os arquivos exportados).
 - Envio de foto do documento no pré-cadastro.
 - Franquias com permissão separada (hoje todo usuário vê a carteira inteira).
+
+- **Pagamento a menor (parcelados):** quando o valor recebido é menor que o devido, o sistema pede o **motivo** e
+  pergunta o que fazer com o que faltou: somar na próxima parcela em aberto (a parcela atual fica "Paga a menor") ou
+  deixar em aberto na mesma parcela. O campo **Juros por atraso** (em % ou R$) só aparece nesse caso e soma os juros
+  junto com o que faltou. O estorno desfaz o repasse; se a parcela que recebeu o valor já tiver pagamento, estorne
+  ela antes. O servidor só aceita mudança no valor de uma parcela quando ela vem junto com o pagamento que a causou.

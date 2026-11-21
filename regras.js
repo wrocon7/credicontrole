@@ -52,7 +52,14 @@ export function proibido(u, op, col, antes, novo, opc = {}) {
     if (ap.length !== np.length) return "Só o administrador altera as parcelas de um contrato.";
     for (let i = 0; i < ap.length; i++) {
       const p = ap[i], q = np[i] || {}, pp = p.pagamentos || [], qp = q.pagamentos || [];
-      if (p.n !== q.n || p.venc !== q.venc || p.valor !== q.valor) return "Só o administrador altera as parcelas de um contrato.";
+      if (p.n !== q.n || p.venc !== q.venc) return "Só o administrador altera as parcelas de um contrato.";
+      // pagamento a menor: o valor da parcela só muda pelo que foi repassado junto com um pagamento novo
+      const aa = p.acrescimos || [], na = q.acrescimos || [];
+      if (aa.some((x, j) => !igual(x, na[j]))) return "Só o administrador altera as parcelas de um contrato.";
+      const novosTx = new Set(np.flatMap(x => (x.pagamentos || []).slice((ap.find(y => y.n === x.n)?.pagamentos || []).length).map(g => g.txId)));
+      const sobe = na.slice(aa.length).reduce((a, x) => novosTx.has(x.txId) ? a + (+x.valor || 0) + (+x.juros || 0) : NaN, 0);
+      const desce = qp.slice(pp.length).reduce((a, g) => a + (+g.repasse?.reduz || 0), 0);
+      if (!(Math.abs((q.valor - p.valor) - (sobe - desce)) < 0.005)) return "Só o administrador altera as parcelas de um contrato.";
       if (pp.some((g, j) => !igual(g, qp[j]))) return pagos;
       if (!!q.quitada !== !!p.quitada && (p.quitada || qp.length === pp.length)) return "Uma parcela só é quitada junto com o registro do pagamento.";
     }
@@ -88,6 +95,12 @@ export function invalido(col, id, d) {
       for (const p of d.parcelas) {
         if (!p || !Number.isInteger(p.n) || !dataISO(p.venc) || !numero(p.valor) || p.valor < 0) return "Parcela inválida.";
         if (!Array.isArray(p.pagamentos ?? []) || (p.pagamentos || []).some(g => !pagamentoOk(g))) return "Pagamento inválido: confira valor e data.";
+        // pagamento a menor: motivo obrigatório; o que faltou e os juros não são negativos
+        if ((p.pagamentos || []).some(g => (g.motivo != null && (typeof g.motivo !== "string" || g.motivo.length > 300)) ||
+          (g.repasse != null && (typeof g.repasse !== "object" || !String(g.motivo || "").trim() || !numero(g.repasse.valor) || g.repasse.valor <= 0 || !numero(g.repasse.reduz) || g.repasse.reduz < 0 || !numero(g.repasse.juros) || g.repasse.juros < 0))))
+          return "Pagamento a menor inválido: informe o motivo.";
+        if (!Array.isArray(p.acrescimos ?? []) || (p.acrescimos || []).some(x => !x || !numero(x.valor) || x.valor < 0 || !numero(x.juros) || x.juros < 0 || !Number.isInteger(x.de)))
+          return "Acréscimo de parcela inválido.";
       }
     } else return "Modalidade de contrato inválida.";
   }

@@ -162,6 +162,20 @@ try {
   confere("operador não estorna parcela", (await chama("PATCH", k2, { parcelas: [{ ...p1, pagamentos: [] }] }, opc)).status === 403);
   confere("operador não quita parcela sem lançar o pagamento", (await chama("PATCH", k2, { parcelas: [{ ...p1, quitada: true }] }, opc)).status === 403);
   confere("operador quita parcela lançando o pagamento", (await chama("PATCH", k2, { parcelas: [{ ...p1, pagamentos: [...p1.pagamentos, { data: "2026-02-11", valor: 320, txId: "t2" }], quitada: true }] }, opc)).status === 200);
+  // pagamento a menor: o que faltou vai para a próxima parcela, com motivo e juros
+  const q1 = { n: 1, venc: "2026-02-10", valor: 200, pagamentos: [] }, q2 = { n: 2, venc: "2026-03-10", valor: 200, pagamentos: [] };
+  const k4 = "/api/doc/contratos/k4";
+  await chama("PUT", k4, { clienteId: "cx", valor: 300, taxa: 10, modalidade: "simples", dataContrato: "2026-01-10", multa: 2, mora: 0.33, parcelas: [q1, q2] }, adm);
+  const pagMenor = (motivo, sobe) => ({ parcelas: [
+    { ...q1, valor: 150, valorOriginal: 200, quitada: true, pagamentos: [{ data: "2026-02-10", valor: 150, txId: "tm", ...(motivo ? { motivo } : {}), repasse: { valor: 50, juros: 5, reduz: 50, para: 2 } }] },
+    { ...q2, valor: 200 + sobe, valorOriginal: 200, acrescimos: [{ de: 1, valor: 50, juros: 5, txId: "tm", motivo }] }] });
+  confere("pagamento a menor sem motivo é recusado", (await chama("PATCH", k4, pagMenor("", 55), opc)).status === 400);
+  confere("operador não aumenta a próxima parcela além do que faltou", (await chama("PATCH", k4, pagMenor("pediu prazo", 80), opc)).status === 403);
+  confere("operador não muda o valor da parcela sem pagamento", (await chama("PATCH", k4, { parcelas: [{ ...q1, valor: 100 }, q2] }, opc)).status === 403);
+  const pm = await chama("PATCH", k4, pagMenor("pediu prazo", 55), opc);
+  confere("pagamento a menor leva o que faltou e os juros para a próxima parcela", pm.status === 200, JSON.stringify(pm.body));
+  confere("operador não estorna o repasse", (await chama("PATCH", k4, { parcelas: [q1, q2] }, opc)).status === 403);
+  confere("administrador estorna o repasse", (await chama("PATCH", k4, { parcelas: [q1, q2] }, adm)).status === 200);
   confere("operador não cancela contrato", (await chama("PATCH", k1, { cancelado: true }, opc)).status === 403);
   confere("operador não exclui contrato", (await chama("DELETE", k1, null, opc)).status === 403);
   confere("operador lança no caixa", (await chama("PUT", "/api/doc/transacoes/t9", { tipo: "entrada", valor: 10, data: "2026-02-10", contratoId: "k1", clienteId: "cx" }, opc)).status === 200);
