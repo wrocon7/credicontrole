@@ -108,7 +108,7 @@
     if (eu.papel !== "admin") {
       const s = document.createElement("style");
       s.textContent = ['[data-act="delContrato"]', '[data-act="estornar"]', '[data-act="estornarSaldo"]', '[data-act="cancelarC"]', '[data-act="delCliente"]',
-        '[data-act="delLanc"]', '[data-act="limparEx"]', '#nav a[data-v="ajustes"]', '#nav a[data-v="caixa"]'].join(",") + "{display:none!important}";
+        '[data-act="delLanc"]', '[data-act="limparEx"]', '#nav a[data-v="ajustes"]', '#nav a[data-v="caixa"]', '#nav a[data-v="relatorios"]'].join(",") + "{display:none!important}";
       document.head.appendChild(s);
     }
     await puxa(true);
@@ -124,7 +124,7 @@
     const a = "color:var(--side-fg);text-decoration:none";
     const box = document.createElement("div");
     box.style.cssText = "margin-top:18px;padding:14px 10px 4px;border-top:1px solid rgba(255,255,255,.1);display:grid;gap:8px;font-size:13px";
-    box.innerHTML = `<div style="color:var(--side-muted)">Conectado como<br><b style="color:#fff">${esc(eu.nome)}</b> · ${eu.papel === "admin" ? "administrador" : "operador" + (eu.rota ? " · " + esc(eu.rota) : " (sem rota)")}</div>
+    box.innerHTML = `<div style="color:var(--side-muted)">Conectado como<br><b style="color:#fff">${esc(eu.nome)}</b> · ${eu.papel === "admin" ? "administrador" + (eu.rota ? " · " + esc(eu.rota) : "") : "operador" + (eu.rota ? " · " + esc(eu.rota) : " (sem rota)")}</div>
       <a href="#" id="ccLink" style="${a}">Copiar mensagem do pré-cadastro</a>
       ${eu.papel === "admin" ? `<a href="/usuarios" style="${a}">Usuários</a><a href="/lembretes" style="${a}">Lembretes no WhatsApp</a><a href="/auditoria" style="${a}">Auditoria</a><a href="/api/backup" download style="${a}">Baixar cópia de segurança</a>` : ""}
       <a href="/trocar-senha" style="${a}">Minha senha</a>

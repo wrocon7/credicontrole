@@ -141,6 +141,13 @@ try {
   confere("administrador confirma o Pix", (await chama("PATCH", k1, { pendente: false }, adm)).status === 200);
   confere("operador registra o primeiro pagamento", (await chama("PATCH", k1, { movimentos: saldo.movimentos }, opc)).status === 200);
   confere("operador registra pagamento novo", (await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2] }, opc)).status === 200);
+  // baixa com juros e capital escolhidos: as partes precisam somar o valor
+  const mm = { id: "mm", data: "2026-01-28", valor: 350, manual: true, juros: 200, capital: 150 };
+  confere("baixa com juros e capital que não somam o valor é recusada", (await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2, { ...mm, capital: 100 }] }, adm)).status === 400);
+  confere("baixa com perdão negativo é recusada", (await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2, { ...mm, perdao: -5 }] }, adm)).status === 400);
+  const mmOk = await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2, { ...mm, perdao: 10 }] }, adm);
+  confere("baixa com juros e capital escolhidos é gravada", mmOk.status === 200);
+  if (mmOk.status === 200) await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2] }, adm); // volta ao estado do resto do teste
   confere("operador não estorna pagamento", (await chama("PATCH", k1, { movimentos: saldo.movimentos }, opc)).status === 403);
   confere("operador não muda o valor de um pagamento já lançado", (await chama("PATCH", k1, { movimentos: [{ ...saldo.movimentos[0], valor: 1 }, m2] }, opc)).status === 403);
   confere("operador não muda valor nem taxa do contrato", (await chama("PATCH", k1, { valor: 50 }, opc)).status === 403 && (await chama("PATCH", k1, { taxa: 1 }, opc)).status === 403);
@@ -239,6 +246,11 @@ try {
   const ed = await chama("PATCH", `/api/usuarios/${novo.json.id}`, { nome: "Operador Renomeado", email: "op2@teste.local", rota: "Rota 2" }, adm);
   const lista = (await chama("GET", "/api/usuarios", null, adm)).json || [], opEd = lista.find(u => u.id === novo.json.id) || {};
   confere("administrador muda nome, e-mail e rota de outro usuário", ed.status === 200 && opEd.nome === "Operador Renomeado" && opEd.email === "op2@teste.local" && opEd.rota === "Rota 2", JSON.stringify(opEd));
+  const euAdm = (await chama("GET", "/api/eu", null, adm)).json;
+  const rAdm = await chama("PATCH", `/api/usuarios/${euAdm.id}`, { rota: "Rota 1" }, adm);
+  confere("administrador também pode ter rota", rAdm.status === 200 && (await chama("GET", "/api/eu", null, adm)).json.rota === "Rota 1");
+  confere("administrador com rota continua vendo as outras rotas", (await docs()).some(d => d.id === "cy" && d.dados.cpf));
+  await chama("PATCH", `/api/usuarios/${euAdm.id}`, { rota: "" }, adm);
   confere("e-mail de outro usuário não pode ser repetido", (await chama("PATCH", `/api/usuarios/${novo.json.id}`, { email: ADMIN.email }, adm)).status === 409);
   confere("lista de rotas para o administrador", JSON.stringify((await chama("GET", "/api/rotas", null, adm)).json) === JSON.stringify(["Rota 1", "Rota 2"]));
   confere("operador não lista rotas nem edita usuários", (await chama("GET", "/api/rotas", null, opc)).status !== 200);

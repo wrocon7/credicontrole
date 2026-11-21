@@ -77,6 +77,15 @@ a pasta com o app parado.
   operador a uma rota. Na ficha do cliente, o administrador escolhe a rota; cliente criado pelo operador cai na rota dele.
 - **O que o operador vê:** só os clientes, contratos e pagamentos da própria rota. Os das outras rotas não saem
   do servidor.
+- **Administrador com rota:** em Usuários, o administrador também pode ter uma rota. Ele continua vendo tudo; a rota dele
+  vale para o link de pré-cadastro que ele copia e para os clientes que ele cadastra.
+- **Caixa por rota:** cada lançamento guarda a rota do cliente (lançamentos antigos usam a rota atual do cliente; despesa
+  manual escolhe a rota). Em Caixa há abas por rota e o fechamento do mês por rota.
+- **Relatórios:** por mês e por rota: vendas (empréstimos), recebido (juros, capital, parcelas), despesas, resultado,
+  metas (definidas em Configurações → Metas mensais por rota), a receber, em atraso. "Gerar PDF" abre a impressão:
+  escolha "Salvar como PDF".
+- **Baixa com juros e capital escolhidos** (saldo devedor): no pagamento, marque "Escolher quanto vai para juros e quanto
+  vai para capital". Se os juros pagos forem menores que os do período, escolha se o resto fica no saldo ou vira desconto.
 - **Contrato lançado pelo operador** fica **Aguardando Pix**: não entra no painel, nas cobranças nem nos lembretes, e
   não recebe pagamento. O administrador abre o contrato e clica em **Confirmar Pix** (informa a data): o contrato passa
   a valer nessa data e a saída entra no caixa. Contrato criado pelo administrador já nasce ativo.

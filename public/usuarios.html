@@ -12,7 +12,7 @@
 <main class="page">
   <p><a href="/" style="color:var(--accent)">← Voltar ao sistema</a></p>
   <h1>Usuários</h1>
-  <p class="muted" style="margin-top:0">Quem pode entrar no sistema. O operador vê só os clientes da rota dele. Administradores veem tudo e gerenciam esta lista.</p>
+  <p class="muted" style="margin-top:0">Quem pode entrar no sistema. O operador vê só os clientes da rota dele. Administradores veem tudo e gerenciam esta lista; o administrador também pode ter uma rota (o link de pré-cadastro dele e os clientes que ele cadastra caem nela).</p>
   <div id="erro" class="erro" hidden></div>
   <section class="card"><div class="tbl"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Rota</th><th>Situação</th><th></th></tr></thead><tbody id="lista"></tbody></table></div></section>
   <section class="card" id="ed" hidden><h2>Editar usuário</h2>
@@ -20,7 +20,7 @@
       <label class="f s3">Nome<input name="nome" required></label>
       <label class="f s3">E-mail<input name="email" type="email" required></label>
       <label class="f s3">Papel<select name="papel"><option value="operador">Operador</option><option value="admin">Administrador</option></select></label>
-      <label class="f s3">Rota (só operador)<select name="rota"></select></label>
+      <label class="f s3">Rota<select name="rota"></select></label>
       <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" id="cancelaEd">Cancelar</button><button class="pri" type="submit">Salvar</button></div>
     </form>
   </section>
@@ -30,7 +30,7 @@
       <label class="f s3">E-mail<input name="email" type="email" required></label>
       <label class="f s3">Senha inicial (8+ caracteres)<input name="senha" type="password" minlength="8" required autocomplete="new-password"></label>
       <label class="f s3">Papel<select name="papel"><option value="operador">Operador</option><option value="admin">Administrador</option></select></label>
-      <label class="f">Rota do operador<select name="rota"></select></label>
+      <label class="f">Rota<select name="rota"></select></label>
       <button class="pri" type="submit">Cadastrar usuário</button>
     </form>
   </section>
@@ -50,7 +50,7 @@ let usuarios = [], rotas = [];
 // rotas cadastradas em Configurações; a rota atual de alguém aparece mesmo se tiver saído da lista
 const opcoesRota = atual => ['<option value="">Sem rota</option>', ...[...new Set([...rotas, atual].filter(Boolean))].map(r => `<option ${r === atual ? "selected" : ""}>${esc(r)}</option>`)].join("");
 const fe = document.getElementById("fe"), ed = document.getElementById("ed");
-const ajustaRota = f => { f.rota.disabled = f.papel.value === "admin"; if (f.papel.value === "admin") f.rota.value = ""; };
+const ajustaRota = () => {}; // administrador também pode ter rota
 function editar(id) {
   const u = usuarios.find(x => x.id === id); if (!u) return;
   fe.dataset.id = id; fe.nome.value = u.nome; fe.email.value = u.email; fe.papel.value = u.papel; fe.rota.innerHTML = opcoesRota(u.rota || "");
@@ -67,7 +67,7 @@ async function carrega() {
   [usuarios, rotas] = await Promise.all([api("GET", "/api/usuarios"), api("GET", "/api/rotas")]);
   const us = usuarios, f = document.getElementById("f");
   f.rota.innerHTML = opcoesRota(""); ajustaRota(f); f.papel.onchange = () => ajustaRota(f);
-  document.getElementById("lista").innerHTML = us.map(u => `<tr><td><b>${esc(u.nome)}</b></td><td>${esc(u.email)}</td><td>${u.papel === "admin" ? "Administrador" : "Operador"}</td><td>${u.papel === "admin" ? "—" : esc(u.rota || "sem rota")}</td>
+  document.getElementById("lista").innerHTML = us.map(u => `<tr><td><b>${esc(u.nome)}</b></td><td>${esc(u.email)}</td><td>${u.papel === "admin" ? "Administrador" : "Operador"}</td><td>${esc(u.rota || (u.papel === "admin" ? "— (vê todas)" : "sem rota"))}</td>
     <td>${u.ativo ? '<span class="pill ok">Ativo</span>' : '<span class="pill">Desativado</span>'}${u.ativo && u.trocar_senha ? ' <span class="pill">vai trocar a senha</span>' : ""}${u.pedido_senha ? ` <span class="pill" style="background:var(--bad-soft);color:var(--bad)">pediu nova senha em ${new Date(u.pedido_senha).toLocaleString("pt-BR")}</span>` : ""}</td>
     <td style="white-space:nowrap"><button class="sm" data-a="editar" data-id="${u.id}">Editar</button> <button class="sm" data-a="ativo" data-id="${u.id}" data-v="${!u.ativo}">${u.ativo ? "Desativar" : "Reativar"}</button> <button class="sm" data-a="senha" data-id="${u.id}">Nova senha</button></td></tr>`).join("");
 }

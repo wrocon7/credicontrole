@@ -137,6 +137,18 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:60
 .grp td{background:var(--surface-2);padding-top:12px}
 .tbl tr.grp:hover td{background:var(--surface-2)}
 .semBaixa [data-act="pagar"]{display:none!important}
+.metabar{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin-top:6px}.metabar i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.metabar.ok i{background:var(--ok)}.so-print{display:none}
+@media print{
+  @page{size:A4;margin:12mm}
+  :root,:root:not([data-theme="light"]),:root[data-theme="dark"]{--bg:#fff;--surface:#fff;--surface-2:#eef2ee;--line:#d5ddd6;--fg:#17221c;--muted:#5d6b62;--accent:#1f7a52;--ok:#1f7a52;--bad:#c23b2b;--warn:#b26b00;color-scheme:light}
+  body{background:#fff;font-size:11px}
+  .app{display:block}aside,#menuBtn,#topActions,#banner,.toolbar,.noprint,.toast{display:none!important}
+  .wrap{padding:0!important;max-width:none!important}.top{margin:0 0 6px}
+  .so-print{display:block}.panel,.kpi{break-inside:avoid;box-shadow:none!important}
+  .tbl{overflow:visible!important}table{font-size:10.5px}.kpis{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+  tr.click{cursor:default}
+}
 </style>
 
 <div class="app">
@@ -152,6 +164,7 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:60
       <a href="#cobrancas" data-v="cobrancas">Cobranças <span class="cnt" id="cntLemb" hidden></span></a>
       <div class="navlbl">Financeiro</div>
       <a href="#caixa" data-v="caixa">Caixa e transações</a>
+      <a href="#relatorios" data-v="relatorios">Relatórios</a>
       <a href="#ajustes" data-v="ajustes">Configurações</a>
     </nav>
   </aside>
@@ -195,6 +208,14 @@ const eu=()=>window.__ccEu||{papel:"admin",nome:""};
 const souAdmin=()=>eu().papel==="admin";
 const rotas=()=>String(cfg("rotas")||"").split(",").map(x=>x.trim()).filter(Boolean);
 const podeReceber=()=>souAdmin()||!!cfg("operadorRecebe");
+// Rota de cada registro. Lançamentos e contratos novos guardam a rota do cliente no momento; os antigos usam a rota atual do cliente.
+const rotaCli=id=>cli(id).rota||"";
+const rotaDoc=x=>typeof x.rota==="string"?x.rota:x.clienteId?rotaCli(x.clienteId):"";
+const daRota=(x,r)=>r==="todas"||(r==="sem rota"?!rotaDoc(x):rotaDoc(x)===r);
+const abasRota=()=>({todas:"Todas as rotas",...Object.fromEntries(rotas().map(r=>[r,r])),"sem rota":"Sem rota"});
+const meta=(r,k)=>{const m=cfg("metas")||{};return r==="todas"?rotas().reduce((a,x)=>a+(+(m[x]||{})[k]||0),0):+((m[r]||{})[k])||0};
+const lerMetas=f=>{const o={};f.querySelectorAll("[data-meta]").forEach(i=>{const v=+i.value;if(v>0)(o[i.dataset.meta]=o[i.dataset.meta]||{})[i.dataset.k]=r2(v)});return o};
+const mesNome=m=>{const s=parse(m+"-01").toLocaleDateString("pt-BR",{month:"long",year:"numeric"});return s[0].toUpperCase()+s.slice(1)};
 const cfg=k=>{const d={nome:"CrediControle",taxa:20,multa:2,mora:0.33,saldoInicial:0,corteDias:1,msg:"Olá {nome}, tudo bem? Passando para lembrar da parcela {parcela} do seu contrato, no valor de {valor}, com vencimento em {vencimento}. Qualquer dúvida estou à disposição."};return S.config[k]??d[k]};
 
 /* ---------- cálculo ---------- */
@@ -252,16 +273,19 @@ function extrato(c,ref){
 function calculaExtrato(c,ref){
   const td=(+c.taxa)/100/30;
   const movs=[...(c.movimentos||[])].sort((a,b)=>a.data.localeCompare(b.data)||String(a.criadoEm||"").localeCompare(String(b.criadoEm||"")));
-  let saldo=r2(c.valor),ult=c.dataContrato,pago=0,jurosPagos=0,capitalPago=0;
+  let saldo=r2(c.valor),ult=c.dataContrato,pago=0,jurosPagos=0,capitalPago=0,perdoado=0;
   const linhas=[{data:c.dataContrato,tipo:"emprestimo",dias:0,juros:0,valor:r2(c.valor),saldo}];
   for(const m of movs){
-    const dias=Math.max(0,days(ult,m.data)),juros=r2(saldo*td*dias),v=r2(m.valor),pj=Math.min(v,juros);
-    saldo=r2(saldo+juros-v);pago=r2(pago+v);jurosPagos=r2(jurosPagos+pj);capitalPago=r2(capitalPago+v-pj);ult=m.data;
-    linhas.push({data:m.data,tipo:"pagamento",dias,juros,valor:v,saldo,mov:m});
+    const dias=Math.max(0,days(ult,m.data)),juros=r2(saldo*td*dias),v=r2(m.valor);
+    // pagamento comum: quita primeiro os juros. Com a divisão escolhida (m.manual): o que foi para capital abate o saldo,
+    // os juros do período que faltaram ficam no saldo, a não ser que tenham sido perdoados (m.perdao).
+    const pj=m.manual?r2(+m.juros||0):Math.min(v,juros),cap=r2(v-pj),falta=r2(Math.max(0,juros-pj)),perd=m.manual?Math.min(falta,r2(+m.perdao||0)):0;
+    saldo=r2(saldo-cap+falta-perd);pago=r2(pago+v);jurosPagos=r2(jurosPagos+pj);capitalPago=r2(capitalPago+cap);perdoado=r2(perdoado+perd);ult=m.data;
+    linhas.push({data:m.data,tipo:"pagamento",dias,juros,valor:v,saldo,mov:m,pj,cap,perd});
   }
   const quitado=movs.length>0&&saldo<=0.009;
   const diasHoje=quitado?0:Math.max(0,days(ult,ref)),jurosHoje=quitado?0:r2(saldo*td*diasHoje);
-  return {linhas,saldoBase:Math.max(0,saldo),ultima:ult,diasHoje,jurosHoje,saldoHoje:quitado?0:r2(saldo+jurosHoje),pago,jurosPagos,capitalPago,quitado,taxaDia:td};
+  return {linhas,saldoBase:Math.max(0,saldo),ultima:ult,diasHoje,jurosHoje,saldoHoje:quitado?0:r2(saldo+jurosHoje),pago,jurosPagos,capitalPago,perdoado,quitado,taxaDia:td};
 }
 /* saldo:fim */
 /* calculo:fim */
@@ -361,9 +385,9 @@ function niceStep(x){if(x<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(
 const short=v=>v>=1e6?"R$ "+(v/1e6).toLocaleString("pt-BR",{maximumFractionDigits:1})+" mi":v>=1e3?"R$ "+(v/1e3).toLocaleString("pt-BR",{maximumFractionDigits:1})+" mil":"R$ "+Math.round(v);
 
 /* ---------- views ---------- */
-const TITLES={dashboard:"Painel",precadastro:"Pré-cadastro",clientes:"Clientes",contratos:"Contratos",inadimplentes:"Inadimplentes",cobrancas:"Cobranças",caixa:"Caixa e transações",ajustes:"Configurações"};
+const TITLES={dashboard:"Painel",precadastro:"Pré-cadastro",clientes:"Clientes",contratos:"Contratos",inadimplentes:"Inadimplentes",cobrancas:"Cobranças",caixa:"Caixa e transações",relatorios:"Relatórios",ajustes:"Configurações"};
 const LOTE_LINHAS=200; // listas longas mostram as primeiras linhas e um botão "mostrar mais": desenhar milhares trava a tela
-const ui={cliQ:"",cliSt:"todos",conQ:"",conSt:"todos",cobTab:"lembretes",cliRota:"",cxMes:today().slice(0,7),cliMax:LOTE_LINHAS,conMax:LOTE_LINHAS};
+const ui={cliQ:"",cliSt:"todos",conQ:"",conSt:"todos",cobTab:"lembretes",cliRota:"",cxRota:"todas",relRota:"todas",cxMes:today().slice(0,7),relMes:today().slice(0,7),cliMax:LOTE_LINHAS,conMax:LOTE_LINHAS};
 function corta(list,chave){
   const tot=list.length,lim=ui[chave];
   return {vis:tot>lim?list.slice(0,lim):list,resto:tot>lim?`<div class="empty" style="padding:14px 20px">Mostrando ${lim} de ${tot}. <button class="sm" data-act="mais" data-k="${chave}">Mostrar mais ${LOTE_LINHAS}</button> Ou refine a busca.</div>`:""};
@@ -389,7 +413,7 @@ function renderAgora(){
   setCnt("#cntPre",pre);setCnt("#cntInad",inad);setCnt("#cntLemb",lembretesHoje().filter(x=>x.situacao==="avisar").length);
   $("#banner").innerHTML=canWrite?"":'<div class="banner">Você está vendo esta carteira em modo somente leitura.</div>';
   const act=$("#topActions");
-  act.innerHTML=({clientes:'<button class="pri" data-act="novoCliente">Novo cliente</button>',precadastro:'<button class="pri" data-act="novoCliente" data-pre="1">Novo pré-cadastro</button>',contratos:'<button class="pri" data-act="novoContrato">Novo contrato</button>',dashboard:'<button class="pri" data-act="novoContrato">Novo contrato</button>',caixa:'<button class="pri" data-act="novoLanc">Novo lançamento</button>'})[view]||"";
+  act.innerHTML=({clientes:'<button class="pri" data-act="novoCliente">Novo cliente</button>',precadastro:'<button class="pri" data-act="novoCliente" data-pre="1">Novo pré-cadastro</button>',contratos:'<button class="pri" data-act="novoContrato">Novo contrato</button>',dashboard:'<button class="pri" data-act="novoContrato">Novo contrato</button>',caixa:'<button class="pri" data-act="novoLanc">Novo lançamento</button>',relatorios:'<button class="pri" data-act="pdf">Gerar PDF</button>'})[view]||"";
   const v=$("#view"),scroll=v.querySelector(".keep")?.scrollTop;
   v.innerHTML=VIEWS[view]();rotular(v);
   const k=v.querySelector(".keep");if(k&&scroll)k.scrollTop=scroll;
@@ -536,15 +560,61 @@ VIEWS.cobrancas=()=>{
   return `<div class="toolbar"><div class="tabs">${abas}</div><span class="muted" style="margin-left:auto">${l.length} parcelas · <b>${money(tot)}</b></span></div>
   <section class="panel">${l.length?`<div class="tbl"><table><thead><tr><th>Vencimento</th><th>Cliente</th><th>Telefone</th><th class="num">Parcela</th><th class="num">Valor a cobrar</th><th></th></tr></thead><tbody>${l.map(x=>{const cl=cli(x.c.clienteId);return `<tr><td>${fdate(x.p.venc)}${x.e.atraso?` <span class="pill bad">${x.e.atraso}d</span>`:""}</td><td><b>${esc(cl.nome)}</b>${ex(x.c)}</td><td>${esc(cl.telefone||"—")}</td><td class="num">${parcLbl(x)}</td><td class="num">${money(x.e.devido)}</td><td><div class="row"><button class="sm" data-act="cobrar" data-id="${x.c.id}" data-n="${x.p.n}">Mensagem</button><button class="sm pri" data-act="pagar" data-id="${x.c.id}" data-n="${x.p.n}">Receber</button></div></td></tr>`}).join("")}</tbody></table></div>`:`<div class="empty"><b>Nada para cobrar neste filtro</b>Troque a aba para ver outros vencimentos.</div>`}</section>`;
 };
+const somaTipo=(l,t)=>r2(l.filter(x=>x.tipo===t).reduce((a,x)=>a+(+x.valor||0),0));
 VIEWS.caixa=()=>{
-  const ent=S.transacoes.filter(x=>x.tipo==="entrada").reduce((a,x)=>a+(+x.valor||0),0);
-  const sai=S.transacoes.filter(x=>x.tipo==="saida").reduce((a,x)=>a+(+x.valor||0),0);
-  const saldo=(+cfg("saldoInicial")||0)+ent-sai;
-  const m=ui.cxMes,l=S.transacoes.filter(x=>(x.data||"").slice(0,7)===m).sort((a,b)=>(b.data+b.criadoEm).localeCompare(a.data+a.criadoEm));
+  const abas=abasRota();if(!abas[ui.cxRota])ui.cxRota="todas";
+  const R=ui.cxRota,todas=R==="todas",tx=S.transacoes.filter(x=>daRota(x,R));
+  const saldo=r2((todas?+cfg("saldoInicial")||0:0)+somaTipo(tx,"entrada")-somaTipo(tx,"saida"));
+  const m=ui.cxMes,doMes=S.transacoes.filter(x=>(x.data||"").slice(0,7)===m),l=doMes.filter(x=>daRota(x,R)).sort((a,b)=>(b.data+b.criadoEm).localeCompare(a.data+a.criadoEm));
+  // fechamento do mês: entradas, saídas e resultado de cada rota
+  const fech=todas?Object.keys(abas).filter(k=>k!=="todas").map(k=>{const q=doMes.filter(x=>daRota(x,k)),e=somaTipo(q,"entrada"),s=somaTipo(q,"saida");return {k,n:abas[k],e,s,q:q.length}}).filter(x=>x.q||x.k!=="sem rota"):[];
   const me=l.filter(x=>x.tipo==="entrada").reduce((a,x)=>a+(+x.valor||0),0),ms=l.filter(x=>x.tipo==="saida").reduce((a,x)=>a+(+x.valor||0),0);
-  return `<div class="kpis">${kpi("Saldo em caixa",money(saldo),"saldo inicial + entradas − saídas")}${kpi("Entradas no mês",money(me),l.filter(x=>x.tipo==="entrada").length+" lançamentos")}${kpi("Saídas no mês",money(ms),l.filter(x=>x.tipo==="saida").length+" lançamentos")}${kpi("Resultado do mês",money(me-ms),"entradas − saídas",me-ms<0?"bad":"")}</div>
-  <div class="toolbar"><label class="f" style="flex-direction:row;align-items:center;gap:8px">Mês <input type="month" id="cxMes" value="${m}" style="width:auto"></label></div>
-  <section class="panel">${l.length?`<div class="tbl"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Forma</th><th class="num">Valor</th><th></th></tr></thead><tbody>${l.map(x=>`<tr><td>${fdate(x.data)}</td><td>${esc(x.descricao)}${ex(x)}</td><td>${esc(x.categoria||"—")}</td><td>${esc(x.forma||"—")}</td><td class="num" style="color:var(${x.tipo==="entrada"?"--ok":"--bad"})">${x.tipo==="entrada"?"+":"−"} ${money(x.valor)}</td><td>${x.contratoId?`<button class="sm" data-act="verContrato" data-id="${x.contratoId}">Contrato</button>`:`<button class="sm danger" data-act="delLanc" data-id="${x.id}">Excluir</button>`}</td></tr>`).join("")}</tbody></table></div>`:`<div class="empty"><b>Sem lançamentos neste mês</b>Empréstimos concedidos e parcelas recebidas entram aqui automaticamente. Despesas e aportes você lança em “Novo lançamento”.</div>`}</section>`;
+  return `<div class="toolbar"><div class="tabs">${tabs("cxRota",abas)}</div></div><div class="kpis">${kpi(todas?"Saldo em caixa":"Saldo da rota",money(saldo),todas?"saldo inicial + entradas − saídas":"entradas − saídas desta rota, desde o início")}${kpi("Entradas no mês",money(me),l.filter(x=>x.tipo==="entrada").length+" lançamentos")}${kpi("Saídas no mês",money(ms),l.filter(x=>x.tipo==="saida").length+" lançamentos")}${kpi("Resultado do mês",money(me-ms),"entradas − saídas",me-ms<0?"bad":"")}</div>
+  <div class="toolbar"><label class="f" style="flex-direction:row;align-items:center;gap:8px">Mês <input type="month" id="cxMes" value="${m}" style="width:auto"></label><button class="sm" data-act="relDoCaixa" style="margin-left:auto">Relatório em PDF</button></div>
+  ${fech.length?`<section class="panel" style="margin-bottom:14px"><header><h2>Fechamento do mês por rota</h2><span class="muted">${mesNome(m)}</span></header><div class="tbl"><table><thead><tr><th>Rota</th><th class="num">Lançamentos</th><th class="num">Entradas</th><th class="num">Saídas</th><th class="num">Resultado</th></tr></thead><tbody>${fech.map(x=>`<tr class="click" data-act="tab" data-k="cxRota" data-v="${esc(x.k)}"><td><b>${esc(x.n)}</b></td><td class="num">${x.q}</td><td class="num" style="color:var(--ok)">${money(x.e)}</td><td class="num" style="color:var(--bad)">${money(x.s)}</td><td class="num"><b>${money(x.e-x.s)}</b></td></tr>`).join("")}</tbody></table></div></section>`:""}
+  <section class="panel">${l.length?`<div class="tbl"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Rota</th><th>Forma</th><th class="num">Valor</th><th></th></tr></thead><tbody>${l.map(x=>`<tr><td>${fdate(x.data)}</td><td>${esc(x.descricao)}${ex(x)}</td><td>${esc(x.categoria||"—")}</td><td>${esc(rotaDoc(x)||"—")}</td><td>${esc(x.forma||"—")}</td><td class="num" style="color:var(${x.tipo==="entrada"?"--ok":"--bad"})">${x.tipo==="entrada"?"+":"−"} ${money(x.valor)}</td><td>${x.contratoId?`<button class="sm" data-act="verContrato" data-id="${x.contratoId}">Contrato</button>`:`<button class="sm danger" data-act="delLanc" data-id="${x.id}">Excluir</button>`}</td></tr>`).join("")}</tbody></table></div>`:`<div class="empty"><b>Sem lançamentos neste mês</b>Empréstimos concedidos e parcelas recebidas entram aqui automaticamente. Despesas e aportes você lança em “Novo lançamento”.</div>`}</section>`;
+};
+// Relatório do mês por rota: vendas (empréstimos), recebimentos, despesas, metas e a carteira de hoje. "Gerar PDF" imprime esta tela.
+function numsRel(R,m){
+  const noMes=x=>(x.data||"").slice(0,7)===m;
+  const cons=S.contratos.filter(c=>!c.cancelado&&!c.pendente&&daRota(c,R));
+  const novos=cons.filter(c=>(c.dataContrato||"").slice(0,7)===m).sort((a,b)=>a.dataContrato.localeCompare(b.dataContrato));
+  const tx=S.transacoes.filter(x=>noMes(x)&&daRota(x,R));
+  const rec=tx.filter(x=>x.tipo==="entrada"&&x.contratoId).sort((a,b)=>a.data.localeCompare(b.data));
+  const cat=k=>r2(rec.filter(x=>x.categoria===k).reduce((a,x)=>a+(+x.valor||0),0));
+  const outros=tx.filter(x=>!x.contratoId).sort((a,b)=>a.data.localeCompare(b.data));
+  const desp=r2(outros.filter(x=>x.tipo==="saida").reduce((a,x)=>a+(+x.valor||0),0)),outrasEnt=r2(outros.filter(x=>x.tipo==="entrada").reduce((a,x)=>a+(+x.valor||0),0));
+  const ab=abertas().filter(x=>daRota(x.c,R)),atr=ab.filter(x=>x.e.atraso>0);
+  const ativos=cons.filter(c=>["ativo","atrasado"].includes(statusC(c)));
+  const juros=cat("Pagamento de juros"),capital=cat("Pagamento de capital"),parcelas=cat("Recebimento de parcela");
+  return {novos,vendas:r2(novos.reduce((a,c)=>a+(+c.valor||0),0)),rec,juros,capital,parcelas,recebido:r2(juros+capital+parcelas),outros,desp,outrasEnt,
+    entradas:somaTipo(tx,"entrada"),saidas:somaTipo(tx,"saida"),ativos:ativos.length,aReceber:r2(ativos.reduce((a,c)=>a+saldoContrato(c),0)),
+    atraso:r2(atr.reduce((a,x)=>a+x.e.devido,0)),nAtraso:new Set(atr.map(x=>x.c.id)).size,nInad:new Set(ab.filter(emInad).map(x=>x.c.clienteId)).size,
+    metaV:meta(R,"vendas"),metaR:meta(R,"recebimento")};
+}
+const pct=(v,m)=>m>0?Math.round(v/m*100):null;
+const barra=(v,m)=>{const p=pct(v,m);return p===null?'<div class="s">sem meta definida</div>':`<div class="s">${p}% da meta de ${money(m)}</div><div class="metabar ${p>=100?"ok":""}"><i style="width:${Math.min(100,p)}%"></i></div>`};
+VIEWS.relatorios=()=>{
+  const abas=abasRota();if(!abas[ui.relRota])ui.relRota="todas";
+  const R=ui.relRota,m=ui.relMes,n=numsRel(R,m),nome=abas[R];
+  const porRota=R==="todas"?Object.keys(abas).filter(k=>k!=="todas").map(k=>({k,n:abas[k],x:numsRel(k,m)})).filter(r=>r.k!=="sem rota"||r.x.novos.length||r.x.rec.length||r.x.outros.length||r.x.ativos):[];
+  const tabela=(cab,linhas,vazio)=>linhas.length?`<div class="tbl"><table><thead><tr>${cab.map(h=>`<th${h.startsWith("#")?' class="num"':""}>${h.replace(/^#/,"")}</th>`).join("")}</tr></thead><tbody>${linhas.join("")}</tbody></table></div>`:`<div class="empty">${vazio}</div>`;
+  return `<div class="so-print"><h2 style="margin:0">${esc(cfg("nome"))} · Relatório ${R==="todas"?"de todas as rotas":"da "+esc(nome)}</h2><div class="muted">${mesNome(m)} · gerado em ${new Date().toLocaleString("pt-BR")}</div><hr style="border:0;border-top:1px solid var(--line);margin:8px 0 12px"></div>
+  <div class="toolbar"><div class="tabs">${tabs("relRota",abas)}</div></div>
+  <div class="toolbar"><label class="f" style="flex-direction:row;align-items:center;gap:8px">Mês <input type="month" id="relMes" value="${m}" style="width:auto"></label><span class="muted" style="margin-left:auto">${esc(nome)} · ${mesNome(m)}</span></div>
+  <div class="kpis">
+    <div class="kpi"><div class="l">Vendas (empréstimos)</div><div class="v">${money(n.vendas)}</div><div class="s">${n.novos.length} contrato${n.novos.length===1?"":"s"} novo${n.novos.length===1?"":"s"}</div>${barra(n.vendas,n.metaV)}</div>
+    <div class="kpi"><div class="l">Recebido</div><div class="v">${money(n.recebido)}</div><div class="s">juros ${money(n.juros)} · capital ${money(n.capital)}${n.parcelas?" · parcelas "+money(n.parcelas):""}</div>${barra(n.recebido,n.metaR)}</div>
+    <div class="kpi"><div class="l">Despesas</div><div class="v">${money(n.desp)}</div><div class="s">lançamentos fora de contrato${n.outrasEnt?" · outras entradas "+money(n.outrasEnt):""}</div></div>
+    <div class="kpi ${n.entradas-n.saidas<0?"bad":""}"><div class="l">Resultado do caixa</div><div class="v">${money(n.entradas-n.saidas)}</div><div class="s">entradas ${money(n.entradas)} − saídas ${money(n.saidas)}</div></div>
+  </div>
+  <div class="kpis">
+    ${kpi("A receber hoje",money(n.aReceber),n.ativos+(n.ativos===1?" contrato ativo":" contratos ativos"))}${kpi("Em atraso",money(n.atraso),n.nAtraso+" contrato"+(n.nAtraso===1?"":"s"),n.atraso?"bad":"")}${kpi("Inadimplentes",String(n.nInad),"clientes")}${kpi("Juros recebidos no mês",money(n.juros),"lucro dos empréstimos")}
+  </div>
+  ${porRota.length?`<section class="panel" style="margin-bottom:14px"><header><h2>Por rota</h2><span class="muted">${mesNome(m)}</span></header>${tabela(["Rota","#Vendas","#Meta","#Recebido","#Meta","#Despesas","#Resultado","#A receber","#Em atraso"],porRota.map(r=>{const x=r.x,pv=pct(x.vendas,x.metaV),pr=pct(x.recebido,x.metaR);return `<tr class="click" data-act="tab" data-k="relRota" data-v="${esc(r.k)}"><td><b>${esc(r.n)}</b></td><td class="num">${money(x.vendas)}</td><td class="num">${pv===null?"—":pv+"%"}</td><td class="num">${money(x.recebido)}</td><td class="num">${pr===null?"—":pr+"%"}</td><td class="num">${money(x.desp)}</td><td class="num"><b>${money(x.entradas-x.saidas)}</b></td><td class="num">${money(x.aReceber)}</td><td class="num" style="color:var(${x.atraso?"--bad":"--fg"})">${money(x.atraso)}</td></tr>`}),"")}</section>`:""}
+  <section class="panel" style="margin-bottom:14px"><header><h2>Vendas do mês</h2><span class="muted">${money(n.vendas)}</span></header>${tabela(["Data","Cliente","Rota","Modalidade","#Taxa","#Valor"],n.novos.map(c=>`<tr class="click" data-act="verContrato" data-id="${c.id}"><td>${fdate(c.dataContrato)}</td><td>${esc(cli(c.clienteId).nome)}</td><td>${esc(rotaDoc(c)||"—")}</td><td>${esc(MOD[c.modalidade]||"—")}</td><td class="num">${(+c.taxa).toLocaleString("pt-BR",{maximumFractionDigits:2})}%</td><td class="num">${money(c.valor)}</td></tr>`),"Nenhum contrato novo neste mês.")}</section>
+  <section class="panel" style="margin-bottom:14px"><header><h2>Pagamentos recebidos</h2><span class="muted">${money(n.recebido)}</span></header>${tabela(["Data","Cliente","Rota","Tipo","Forma","#Valor"],n.rec.map(x=>`<tr><td>${fdate(x.data)}</td><td>${esc(cli(x.clienteId).nome)}</td><td>${esc(rotaDoc(x)||"—")}</td><td>${esc((x.categoria||"").replace("Pagamento de ","").replace("Recebimento de ",""))}</td><td>${esc(x.forma||"—")}</td><td class="num" style="color:var(--ok)">${money(x.valor)}</td></tr>`),"Nenhum pagamento neste mês.")}</section>
+  <section class="panel"><header><h2>Despesas e outros lançamentos</h2><span class="muted">${money(n.desp)} em despesas</span></header>${tabela(["Data","Descrição","Categoria","Rota","#Valor"],n.outros.map(x=>`<tr><td>${fdate(x.data)}</td><td>${esc(x.descricao)}</td><td>${esc(x.categoria||"—")}</td><td>${esc(rotaDoc(x)||"—")}</td><td class="num" style="color:var(${x.tipo==="entrada"?"--ok":"--bad"})">${x.tipo==="entrada"?"+":"−"} ${money(x.valor)}</td></tr>`),"Nenhuma despesa neste mês.")}</section>`;
 };
 VIEWS.ajustes=()=>`<section class="panel"><header><h2>Padrões da carteira</h2></header><div class="body"><form id="fCfg" class="form">
   <label class="f full">Nome exibido no sistema<input name="nome" id="cfgNome" value="${esc(cfg("nome"))}" required></label>
@@ -556,7 +626,8 @@ VIEWS.ajustes=()=>`<section class="panel"><header><h2>Padrões da carteira</h2><
   <label class="f full">Mensagem de cobrança<textarea name="msg" id="cfgMsg">${esc(cfg("msg"))}</textarea><span class="muted" style="font-weight:400">Use {nome}, {parcela}, {valor}, {vencimento} e {atraso}.</span></label>
   <label class="f full">Nome da empresa no formulário público de pré-cadastro<input name="empresaPublica" id="cfgEmpresa" value="${esc(cfg("empresaPublica")||"")}" placeholder="Quem recebe os dados (obrigatório pela LGPD)"></label>
   <label class="f full">Texto de privacidade do formulário público<textarea name="avisoPrivacidade" id="cfgAviso" placeholder="Deixe vazio para usar o texto padrão">${esc(cfg("avisoPrivacidade")||"")}</textarea></label>
-  <label class="f full">Rotas (separadas por vírgula)<input name="rotas" id="cfgRotas" value="${esc(cfg("rotas")||"")}" placeholder="Rota 1, Rota 2, Rota 3"><span class="muted" style="font-weight:400">Cada operador é ligado a uma rota em Usuários e só vê por inteiro os clientes dela.</span></label>
+  <label class="f full">Rotas (separadas por vírgula)<input name="rotas" id="cfgRotas" value="${esc(cfg("rotas")||"")}" placeholder="Rota 1, Rota 2, Rota 3"><span class="muted" style="font-weight:400">Cada operador é ligado a uma rota em Usuários e só vê os clientes dela.</span></label>
+  <div class="f full"><span>Metas mensais por rota (R$)</span>${rotas().length?`<div class="tbl"><table><thead><tr><th>Rota</th><th>Meta de vendas (empréstimos)</th><th>Meta de recebimento</th></tr></thead><tbody>${rotas().map(r=>`<tr><td><b>${esc(r)}</b></td><td><input type="number" step="0.01" min="0" data-meta="${esc(r)}" data-k="vendas" value="${meta(r,"vendas")||""}" placeholder="0,00"></td><td><input type="number" step="0.01" min="0" data-meta="${esc(r)}" data-k="recebimento" value="${meta(r,"recebimento")||""}" placeholder="0,00"></td></tr>`).join("")}</tbody></table></div>`:""}<span class="muted" style="font-weight:400">Aparecem em Relatórios, com quanto da meta já foi atingido. Rota nova: salve as rotas primeiro e depois defina a meta.</span></div>
   <label class="f full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500;color:var(--fg)"><input type="checkbox" name="operadorRecebe" style="width:auto" ${cfg("operadorRecebe")?"checked":""}>Operadores podem registrar recebimentos (dar baixa). Desmarcado, só o administrador dá baixa.</label>
   <div class="row full"><button class="pri" type="submit">Salvar configurações</button></div></form></div></section>
   <section class="panel" style="margin-top:14px"><header><h2>Dados de exemplo</h2></header><div class="body"><p style="margin-top:0">Registros marcados como <span class="ex">exemplo</span> servem só para você conhecer o sistema. Remova todos antes de começar com seus clientes reais.</p><button class="danger" data-act="limparEx" ${[...S.clientes,...S.contratos,...S.transacoes].some(x=>x.exemplo)?"":"disabled"}>Remover dados de exemplo</button></div></section>`;
@@ -573,12 +644,12 @@ function verCliente(id){
 function verContratoSaldo(c){
   const cl=cli(c.clienteId),x=extrato(c),t=today(),aberto=!c.cancelado&&!x.quitado,atraso=Math.max(0,days(c.vencimento,t));
   const ren=c.renegociacoes||[],tx=(+c.taxa).toLocaleString("pt-BR",{maximumFractionDigits:4});
-  const linhas=x.linhas.map((l,k)=>`<tr><td>${k+1}</td><td>${fdate(l.data)}<div class="muted">${l.tipo==="emprestimo"?"Empréstimo":"Pagamento"+(l.mov.forma?" · "+esc(l.mov.forma):"")}</div></td><td class="num">${l.dias}</td><td class="num">${l.tipo==="emprestimo"?"—":money(l.juros)}</td><td class="num" style="color:var(${l.tipo==="emprestimo"?"--fg":"--ok"})">${money(l.valor)}</td><td class="num">${money(Math.max(0,l.saldo))}</td><td>${l.mov&&k===x.linhas.length-1?`<button class="sm" data-act="estornarSaldo" data-id="${c.id}">Estornar</button>`:""}</td></tr>`).join("");
+  const linhas=x.linhas.map((l,k)=>`<tr><td>${k+1}</td><td>${fdate(l.data)}<div class="muted">${l.tipo==="emprestimo"?"Empréstimo":"Pagamento"+(l.mov.forma?" · "+esc(l.mov.forma):"")}</div></td><td class="num">${l.dias}</td><td class="num">${l.tipo==="emprestimo"?"—":money(l.juros)}</td><td class="num" style="color:var(${l.tipo==="emprestimo"?"--fg":"--ok"})">${money(l.valor)}${l.mov?`<div class="muted" style="font-size:12px">juros ${money(l.pj)} · capital ${money(l.cap)}${l.perd?` · desconto ${money(l.perd)}`:""}</div>`:""}</td><td class="num">${money(Math.max(0,l.saldo))}</td><td>${l.mov&&k===x.linhas.length-1?`<button class="sm" data-act="estornarSaldo" data-id="${c.id}">Estornar</button>`:""}</td></tr>`).join("");
   const hoje=aberto?`<tr><td></td><td><i>Hoje, ${fdate(t)}</i><div class="muted">previsão, nada lançado</div></td><td class="num">${x.diasHoje}</td><td class="num">${money(x.jurosHoje)}</td><td class="num">—</td><td class="num"><b>${money(x.saldoHoje)}</b></td><td></td></tr>`:"";
   openDrawer(`<div class="hd"><div><h2>Contrato de ${esc(cl.nome)}${ex(c)}</h2><div class="row" style="margin-top:4px">${pillC(c)}<span class="muted">${MOD.saldo} · ${tx}% ao mês</span></div></div><button data-act="close">Fechar</button></div>
   ${aberto&&atraso?`<div class="banner" style="background:var(--bad-soft);color:var(--bad);margin:0">Vencido há ${atraso} dia${atraso>1?"s":""} (venceu em ${fdate(c.vencimento)})${ren.length?` · renegociado ${ren.length}×`:""}</div>`:""}${bannerPend(c)}${bannerInad(c)}
   <div class="kpis" style="grid-template-columns:repeat(2,minmax(0,1fr));margin:0">${kpi("Saldo devedor hoje",money(x.saldoHoje),x.quitado?"contrato quitado":"inclui "+money(x.jurosHoje)+" de juros",aberto&&atraso?"bad":"")}${kpi("Só os juros até hoje",money(x.jurosHoje),x.diasHoje+" dias desde "+fdate(x.ultima))}</div>
-  <div class="panel"><div class="body dl">${[["Valor emprestado",money(c.valor)],["Taxa",`${tx}% ao mês · ${(x.taxaDia*100).toLocaleString("pt-BR",{maximumFractionDigits:3})}% ao dia`],["Data do contrato",fdate(c.dataContrato)],["Vencimento",fdate(c.vencimento)+(ren.length?` (reneg. ${ren.length}×)`:"")],["Total pago",money(x.pago)],["Juros pagos",money(x.jurosPagos)],["Capital pago",money(x.capitalPago)],["Dias desde a última transação",days(x.ultima,t)]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("")}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
+  <div class="panel"><div class="body dl">${[["Valor emprestado",money(c.valor)],["Taxa",`${tx}% ao mês · ${(x.taxaDia*100).toLocaleString("pt-BR",{maximumFractionDigits:3})}% ao dia`],["Data do contrato",fdate(c.dataContrato)],["Vencimento",fdate(c.vencimento)+(ren.length?` (reneg. ${ren.length}×)`:"")],["Total pago",money(x.pago)],["Juros pagos",money(x.jurosPagos)],["Capital pago",money(x.capitalPago)],...(x.perdoado?[["Desconto nos juros",money(x.perdoado)]]:[]),["Dias desde a última transação",days(x.ultima,t)]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("")}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
   <section class="panel"><header><h2>Cronograma de transações</h2><span class="muted">juros = saldo × ${tx}% ÷ 30 × dias</span></header><div class="tbl"><table><thead><tr><th>#</th><th>Data</th><th class="num">Dias</th><th class="num">Juros do período</th><th class="num">Valor</th><th class="num">Saldo devedor</th><th></th></tr></thead><tbody>${linhas}${hoje}</tbody></table></div></section>
   ${ren.length?`<section class="panel"><header><h2>Renegociações de vencimento</h2></header><div class="tbl"><table><thead><tr><th>Em</th><th>De</th><th>Para</th><th>Motivo</th></tr></thead><tbody>${ren.map(r=>`<tr><td>${fdate(r.data)}</td><td>${fdate(r.de)}</td><td>${fdate(r.para)}</td><td>${esc(r.motivo||"—")}</td></tr>`).join("")}</tbody></table></div></section>`:""}
   <div class="row">${aberto?`<button class="pri" data-act="pagar" data-id="${c.id}">Registrar pagamento</button><button data-act="renegociar" data-id="${c.id}">Renegociar vencimento</button><button data-act="cobrar" data-id="${c.id}">Mensagem</button>${btnInad(c)}<button data-act="cancelarC" data-id="${c.id}">Cancelar contrato</button>`:""}<button class="danger" data-act="delContrato" data-id="${c.id}">Excluir contrato</button><button data-act="verCliente" data-id="${c.clienteId}">Ver cliente</button></div>`);
@@ -630,7 +701,7 @@ function formCliente(c,pre){
     <label class="f">Tempo de carteira<input name="tempoRegistro" value="${esc(c.tempoRegistro)}"></label>
     <label class="f">Renda mensal (R$)<input name="renda" type="number" step="0.01" min="0" value="${esc(c.renda)}"></label>
     <label class="f full">Contatos de referência<textarea name="referencias" style="min-height:56px;text-transform:uppercase" placeholder="Nome (parentesco) — telefone, um por linha">${esc(c.referencias)}</textarea></label>
-    ${souAdmin()?`<label class="f">Rota<select name="rota"><option value="">Sem rota</option>${[...new Set([...rotas(),c.rota].filter(Boolean))].map(r=>`<option ${c.rota===r?"selected":""}>${esc(r)}</option>`).join("")}</select></label>`:""}
+    ${souAdmin()?`<label class="f">Rota<select name="rota"><option value="">Sem rota</option>${[...new Set([...rotas(),c.rota,c.id?"":eu().rota].filter(Boolean))].map(r=>`<option ${(c.id?c.rota:eu().rota)===r?"selected":""}>${esc(r)}</option>`).join("")}</select></label>`:""}
     <label class="f full">Observações<textarea name="obs">${esc(c.obs)}</textarea></label>
     <label class="f full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500;color:var(--fg)"><input type="checkbox" name="semLembrete" style="width:auto" ${c.semLembrete?"checked":""}>Não mandar lembretes de vencimento pelo WhatsApp</label>
     <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Salvar</button></div></form>`);
@@ -703,12 +774,12 @@ function formContrato(cliId){
   f.oninput=sim;sim();
   f.onsubmit=async e=>{e.preventDefault();const d=formData(f),sd=d.modalidade==="saldo";
     if(erroParcela){toast(erroParcela);return}
-    const c={id:uid("ct"),clienteId:d.clienteId,valor:+d.valor,taxa:+d.taxa,modalidade:d.modalidade,primeiroVenc:d.primeiroVenc,dataContrato:d.dataContrato,obs:d.obs,forma:d.forma,criadoEm:new Date().toISOString()};
+    const c={id:uid("ct"),clienteId:d.clienteId,rota:rotaCli(d.clienteId),valor:+d.valor,taxa:+d.taxa,modalidade:d.modalidade,primeiroVenc:d.primeiroVenc,dataContrato:d.dataContrato,obs:d.obs,forma:d.forma,criadoEm:new Date().toISOString()};
     if(sd)Object.assign(c,{vencimento:d.primeiroVenc,movimentos:[],renegociacoes:[],parcelas:[]});
     else{Object.assign(c,{periodicidade:d.periodicidade,nParcelas:+d.nParcelas,multa:+d.multa,mora:+d.mora});if(fixa)c.parcelaFixa=r2(+d.parcela);c.parcelas=gerarParcelas(c)}
     const {id:cid,...dadosC}=c,ops=[{op:"gravar",col:"contratos",id:cid,dados:dadosC}];
     // operador: o contrato nasce aguardando o Pix (o servidor garante); a saída do caixa entra quando o administrador confirmar
-    if(adm)ops.push({op:"gravar",col:"transacoes",id:uid("tx"),dados:{tipo:"saida",valor:c.valor,data:c.dataContrato,categoria:"Empréstimo concedido",descricao:"Empréstimo para "+cli(c.clienteId).nome,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,criadoEm:new Date().toISOString()}});
+    if(adm)ops.push({op:"gravar",col:"transacoes",id:uid("tx"),dados:{tipo:"saida",valor:c.valor,data:c.dataContrato,categoria:"Empréstimo concedido",descricao:"Empréstimo para "+cli(c.clienteId).nome,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,rota:rotaCli(c.clienteId),criadoEm:new Date().toISOString()}});
     else dadosC.pendente=true;
     try{await gravaJuntos(ops);closeTop();toast(adm?"Contrato criado":"Contrato lançado. Aguardando o administrador confirmar o Pix.");verContrato(c.id)}catch(_){}};
 }
@@ -721,7 +792,7 @@ function formConfirmarPix(cid){
   $("#fPix").onsubmit=async e=>{e.preventDefault();const d=formData(e.target),c2=S.contratos.find(x=>x.id===cid); // o contrato como está agora
     if(!c2||!c2.pendente){closeTop();toast("Este contrato já foi confirmado.");return}
     try{await gravaJuntos([{op:"mesclar",col:"contratos",id:cid,dados:{pendente:false,dataContrato:d.data,confirmadoEm:new Date().toISOString(),confirmadoPor:eu().nome||""}},
-        {op:"gravar",col:"transacoes",id:uid("tx"),dados:{tipo:"saida",valor:c2.valor,data:d.data,categoria:"Empréstimo concedido",descricao:"Empréstimo para "+cli(c2.clienteId).nome,forma:d.forma,contratoId:cid,clienteId:c2.clienteId,criadoEm:new Date().toISOString()}}]);
+        {op:"gravar",col:"transacoes",id:uid("tx"),dados:{tipo:"saida",valor:c2.valor,data:d.data,categoria:"Empréstimo concedido",descricao:"Empréstimo para "+cli(c2.clienteId).nome,forma:d.forma,contratoId:cid,clienteId:c2.clienteId,rota:rotaCli(c2.clienteId),criadoEm:new Date().toISOString()}}]);
       closeTop();toast("Pix confirmado: contrato ativo");setTimeout(()=>verContrato(cid),300)}catch(_){}};
 }
 function formPagar(cid,n){
@@ -742,7 +813,7 @@ function formPagar(cid,n){
     if(v>ed.devido+0.009){toast("O valor passa do total devido ("+money(ed.devido)+").");return}
     const parcelas=c2.parcelas.map(x=>x.n!==n?x:{...x,pagamentos:[...(x.pagamentos||[]),{data:d.data,valor:v,txId,forma:d.forma}],quitada:quita});
     try{await gravaJuntos([{op:"mesclar",col:"contratos",id:cid,dados:{parcelas}},
-        {op:"gravar",col:"transacoes",id:txId,dados:{tipo:"entrada",valor:v,data:d.data,categoria:"Recebimento de parcela",descricao:`Parcela ${n}/${c2.parcelas.length} · ${cli(c2.clienteId).nome}`,forma:d.forma,contratoId:cid,clienteId:c2.clienteId,criadoEm:new Date().toISOString()}}]);
+        {op:"gravar",col:"transacoes",id:txId,dados:{tipo:"entrada",valor:v,data:d.data,categoria:"Recebimento de parcela",descricao:`Parcela ${n}/${c2.parcelas.length} · ${cli(c2.clienteId).nome}`,forma:d.forma,contratoId:cid,clienteId:c2.clienteId,rota:rotaCli(c2.clienteId),criadoEm:new Date().toISOString()}}]);
       closeTop();toast(quita?"Parcela quitada":"Pagamento parcial registrado");if($(".drawer"))verContrato(cid)}catch(_){}};
 }
 function formPagarSaldo(cid){
@@ -752,28 +823,43 @@ function formPagarSaldo(cid){
   <form id="fPag" class="form"><label class="f">Data do pagamento<input name="data" type="date" required min="${x0.ultima}" value="${t<x0.ultima?x0.ultima:t}"></label>
   <label class="f">Valor recebido (R$)<input name="valor" type="number" step="0.01" min="0.01" required></label>
   <div class="row full"><button type="button" class="sm" data-fill="juros">Só os juros</button><button type="button" class="sm" data-fill="total">Quitar tudo</button></div>
+  <label class="f full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500;color:var(--fg)"><input type="checkbox" name="manual" style="width:auto">Escolher quanto vai para juros e quanto vai para capital</label>
+  <label class="f man" hidden>Vai para juros (R$)<input name="juros" type="number" step="0.01" min="0"></label>
+  <label class="f man" hidden>Vai para capital (R$)<input name="capital" type="number" step="0.01" min="0"></label>
+  <div class="f full man" id="pgFalta" hidden></div>
   <label class="f">Forma<select name="forma"><option>Pix</option><option>Dinheiro</option><option>Transferência</option><option>Cartão</option></select></label>
   <label class="f">Novo vencimento (opcional)<input name="novoVenc" type="date"></label>
   <div class="calc full" id="pgSplit"></div>
   <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Registrar pagamento</button></div></form>`);
   const f=$("#fPag"),F=n=>f.elements[n],calc=()=>{
-    const dt=F("data").value||t,x=extrato(c,dt),v=r2(+F("valor").value||0),pj=Math.min(v,x.jurosHoje),pc=r2(v-pj),dep=r2(x.saldoHoje-v);
+    const dt=F("data").value||t,x=extrato(c,dt),man=F("manual").checked;
+    f.querySelectorAll(".man").forEach(el=>el.hidden=!man);F("valor").readOnly=man;
+    let v,pj,pc,perdao=0;
+    if(man){pj=r2(+F("juros").value||0);pc=r2(+F("capital").value||0);v=r2(pj+pc);F("valor").value=v?v.toFixed(2):"";
+      const falta=r2(Math.max(0,x.jurosHoje-pj)),box=$("#pgFalta"),perd=!!box.querySelector("[value=perdoar]:checked");
+      box.hidden=!falta;
+      box.innerHTML=falta?`<span>Faltam ${money(falta)} dos juros do período. O que fazer com eles?</span><label style="font-weight:400;display:flex;gap:6px;align-items:center;color:var(--fg)"><input type="radio" name="falta" value="saldo" style="width:auto" ${perd?"":"checked"}>Ficam no saldo (o cliente continua devendo)</label><label style="font-weight:400;display:flex;gap:6px;align-items:center;color:var(--fg)"><input type="radio" name="falta" value="perdoar" style="width:auto" ${perd?"checked":""}>Dar desconto (perdoar esses juros)</label>`:"";
+      if(falta&&perd)perdao=falta}
+    else{v=r2(+F("valor").value||0);pj=Math.min(v,x.jurosHoje);pc=r2(v-pj)}
+    const dep=r2(x.saldoBase-pc+Math.max(0,x.jurosHoje-pj)-perdao);
     $("#pgCalc").innerHTML=`<div><span>Saldo depois do último movimento (${fdate(x.ultima)})</span><span>${money(x.saldoBase)}</span></div><div><span>Juros de ${x.diasHoje} dias (${(+c.taxa).toLocaleString("pt-BR")}% ao mês ÷ 30)</span><span>${money(x.jurosHoje)}</span></div><div class="t"><span>Para quitar em ${fdate(dt)}</span><span>${money(x.saldoHoje)}</span></div>`;
-    $("#pgSplit").innerHTML=v>0?`<div><span>Vai para juros</span><span>${money(pj)}</span></div><div><span>Vai para capital</span><span>${money(pc)}</span></div><div class="t"><span>${dep<=0.009?"Contrato quitado":"Saldo depois do pagamento"}</span><span>${money(Math.max(0,dep))}</span></div>`:"";
-    return {x,v,pj,pc,dep}};
+    $("#pgSplit").innerHTML=v>0?`<div><span>Vai para juros</span><span>${money(pj)}</span></div><div><span>Vai para capital</span><span>${money(pc)}</span></div>${perdao?`<div><span>Desconto nos juros</span><span>${money(perdao)}</span></div>`:""}<div class="t"><span>${dep<=0.009?"Contrato quitado":"Saldo depois do pagamento"}</span><span>${money(Math.max(0,dep))}</span></div>`:"";
+    return {x,v,pj,pc,dep,man,perdao}};
   f.oninput=calc;calc();
   f.querySelectorAll("[data-fill]").forEach(b=>b.onclick=()=>{const x=extrato(c,F("data").value||t),j=b.dataset.fill==="juros";
-    F("valor").value=(j?x.jurosHoje:x.saldoHoje).toFixed(2);if(j&&!F("novoVenc").value)F("novoVenc").value=addMonths(c.vencimento,1);calc()});
+    F("manual").checked=false;F("valor").value=(j?x.jurosHoje:x.saldoHoje).toFixed(2);if(j&&!F("novoVenc").value)F("novoVenc").value=addMonths(c.vencimento,1);calc()});
   f.onsubmit=async ev=>{ev.preventDefault();
     // o contrato como está agora (outra pessoa pode ter lançado um pagamento com esta janela aberta); o cálculo é refeito
     c=S.contratos.find(x=>x.id===cid)||c;
-    const {x,v,pj,pc,dep}=calc(),d=formData(f);
+    const {x,v,pj,pc,dep,man,perdao}=calc(),d=formData(f);
     if(c.cancelado||x.quitado){closeTop();toast("Este contrato não está mais em aberto.");return}
     if(!(v>0)){toast("Informe o valor recebido.");return}
     if(d.data<x.ultima){toast("A data não pode ser anterior ao último movimento ("+fdate(x.ultima)+").");return}
-    if(v>x.saldoHoje+0.009){toast("O valor passa do total para quitar ("+money(x.saldoHoje)+").");return}
-    const now=new Date().toISOString(),nome=cli(c.clienteId).nome,base={tipo:"entrada",data:d.data,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,criadoEm:now};
+    if(!man&&v>x.saldoHoje+0.009){toast("O valor passa do total para quitar ("+money(x.saldoHoje)+").");return}
+    if(man&&dep<-0.009){toast("O capital passa do saldo devedor ("+money(x.saldoBase)+").");return}
+    const now=new Date().toISOString(),nome=cli(c.clienteId).nome,base={tipo:"entrada",data:d.data,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,rota:rotaCli(c.clienteId),criadoEm:now};
     const m={id:uid("mv"),data:d.data,valor:v,juros:pj,capital:pc,forma:d.forma,criadoEm:now},mud={},caixa=[];
+    if(man){m.manual=true;if(perdao>0)m.perdao=perdao}
     if(pj>0){m.txJ=uid("tx");caixa.push({op:"gravar",col:"transacoes",id:m.txJ,dados:{...base,valor:pj,categoria:"Pagamento de juros",descricao:"Juros · "+nome}})}
     if(pc>0){m.txC=uid("tx");caixa.push({op:"gravar",col:"transacoes",id:m.txC,dados:{...base,valor:pc,categoria:"Pagamento de capital",descricao:"Capital · "+nome}})}
     if(d.novoVenc&&d.novoVenc!==c.vencimento&&dep>0.009){m.vencAnterior=c.vencimento;mud.vencimento=d.novoVenc;mud.renegociacoes=[...(c.renegociacoes||[]),{data:d.data,de:c.vencimento,para:d.novoVenc,motivo:"Pagamento de "+money(v),movId:m.id}]}
@@ -839,7 +925,8 @@ function formLanc(){
   <label class="f full">Descrição<input name="descricao" required placeholder="Ex.: combustível para cobranças"></label>
   <label class="f">Categoria<input name="categoria" list="cats" placeholder="Despesa operacional"><datalist id="cats"><option>Despesa operacional</option><option>Aporte de capital</option><option>Retirada do sócio</option><option>Comissão</option></datalist></label>
   <label class="f">Data<input name="data" type="date" required value="${today()}"></label>
-  <label class="f full">Forma<select name="forma"><option>Pix</option><option>Dinheiro</option><option>Transferência</option></select></label>
+  <label class="f">Forma<select name="forma"><option>Pix</option><option>Dinheiro</option><option>Transferência</option></select></label>
+  <label class="f">Rota<select name="rota"><option value="">Sem rota (geral)</option>${rotas().map(r=>`<option ${ui.cxRota===r?"selected":""}>${esc(r)}</option>`).join("")}</select></label>
   <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Lançar</button></div></form>`);
   $("#fLan").onsubmit=async e=>{e.preventDefault();const d=formData(e.target);try{await put("transacoes",{...d,id:uid("tx"),valor:+d.valor,criadoEm:new Date().toISOString()});closeTop();toast("Lançamento registrado")}catch(_){}};
 }
@@ -874,6 +961,8 @@ document.addEventListener("click",async e=>{
     case"marcarInad":formMarcarInad(id);break;
     case"desmarcarInad":confirmar("Tirar este contrato da inadimplência? Ele só volta para a lista se passar do corte de dias.",async()=>{try{await upd("contratos",id,{inad:null});toast("Marcação removida");setTimeout(()=>verContrato(id),300)}catch(_){}},"Tirar");break;
     case"novoLanc":formLanc();break;
+    case"pdf":window.print();break;
+    case"relDoCaixa":ui.relRota=ui.cxRota;ui.relMes=ui.cxMes;location.hash="relatorios";break;
     case"aprovar":try{await upd("clientes",id,{status:"ativo"});toast("Cadastro aprovado");if($(".drawer"))verCliente(id)}catch(_){}break;
     case"recusar":confirmar("Recusar e excluir este pré-cadastro?",async()=>{try{await del("clientes",id);toast("Pré-cadastro excluído")}catch(_){}},"Recusar");break;
     case"bloquear":{const c=S.clientes.find(x=>x.id===id);try{await upd("clientes",id,{status:c.status==="bloqueado"?"ativo":"bloqueado"});setTimeout(()=>verCliente(id),300)}catch(_){}break}
@@ -889,10 +978,11 @@ document.addEventListener("input",e=>{
   const t=e.target;
   if(t.id==="cliQ"||t.id==="conQ"){ui[t.id]=t.value;ui.cliMax=ui.conMax=LOTE_LINHAS;focusId=t.id;focusPos=t.selectionStart;render();}
   if(t.id==="cxMes"&&t.value){ui.cxMes=t.value;render()}
+  if(t.id==="relMes"&&t.value){ui.relMes=t.value;render()}
 });
 document.addEventListener("submit",async e=>{
   if(e.target.id!=="fCfg")return;e.preventDefault();const d=formData(e.target);
-  try{if(!canWrite)throw 0;await db.doc("config/geral").set({nome:d.nome,taxa:+d.taxa,saldoInicial:+d.saldoInicial||0,multa:+d.multa,mora:+d.mora,corteDias:Math.max(1,parseInt(d.corteDias)||1),msg:d.msg,empresaPublica:(d.empresaPublica||"").trim(),avisoPrivacidade:(d.avisoPrivacidade||"").trim(),rotas:(d.rotas||"").split(",").map(x=>x.trim()).filter(Boolean).join(", "),operadorRecebe:d.operadorRecebe==="on"});toast("Configurações salvas")}catch(_){toast("Não foi possível salvar.")}
+  try{if(!canWrite)throw 0;await db.doc("config/geral").set({nome:d.nome,taxa:+d.taxa,saldoInicial:+d.saldoInicial||0,multa:+d.multa,mora:+d.mora,corteDias:Math.max(1,parseInt(d.corteDias)||1),msg:d.msg,empresaPublica:(d.empresaPublica||"").trim(),avisoPrivacidade:(d.avisoPrivacidade||"").trim(),rotas:(d.rotas||"").split(",").map(x=>x.trim()).filter(Boolean).join(", "),operadorRecebe:d.operadorRecebe==="on",metas:lerMetas(e.target)});toast("Configurações salvas")}catch(_){toast("Não foi possível salvar.")}
 });
 $("#menuBtn").onclick=e=>{e.stopPropagation();$("#side").classList.toggle("open")};
 document.addEventListener("click",e=>{const s=$("#side");if(s.classList.contains("open")&&!s.contains(e.target)&&!e.target.closest("#menuBtn"))s.classList.remove("open")},true); // tocar fora fecha o menu no celular

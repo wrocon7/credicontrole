@@ -80,6 +80,9 @@ export function invalido(col, id, d) {
     if (d.modalidade === "saldo") {
       if (!dataISO(d.vencimento)) return "Vencimento inválido.";
       if (!Array.isArray(d.movimentos ?? []) || (d.movimentos || []).some(m => !pagamentoOk(m) || typeof m.id !== "string")) return "Pagamento inválido: confira valor e data.";
+      // baixa com juros e capital escolhidos à mão: as duas partes somam o valor recebido; o perdão de juros não é negativo
+      if ((d.movimentos || []).some(m => m.manual && (!numero(m.juros) || !numero(m.capital) || m.juros < 0 || m.capital < 0 || Math.abs(m.juros + m.capital - m.valor) > 0.01 || (m.perdao != null && (!numero(m.perdao) || m.perdao < 0)))))
+        return "Pagamento inválido: juros e capital precisam somar o valor recebido.";
     } else if (["simples", "price", "juros"].includes(d.modalidade)) {
       if (!Array.isArray(d.parcelas) || !d.parcelas.length || d.parcelas.length > 400) return "Parcelas inválidas.";
       for (const p of d.parcelas) {

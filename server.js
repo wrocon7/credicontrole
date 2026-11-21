@@ -315,7 +315,7 @@ app.post("/api/usuarios", exige("admin"), assincrono(async (req, res) => {
   if (!nome || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ erro: "Informe nome e e-mail válidos." });
   if (!senhaValida(senha)) return res.status(400).json({ erro: ERRO_SENHA });
   try {
-    const rota = papel === "admin" ? "" : rotaDe(req.body?.rota);
+    const rota = rotaDe(req.body?.rota); // administrador também pode ter rota (continua vendo tudo)
     const id = await db.usuarios.criar({ email, nome: nome.slice(0, 120), senha: await hashSenha(senha), papel, rota });
     audita(req, { acao: "usuario_criado", colecao: "usuarios", id: String(id), depois: { nome, email, papel, rota } });
     res.json({ id });
@@ -339,7 +339,6 @@ app.patch("/api/usuarios/:id", exige("admin"), assincrono(async (req, res) => {
     if (outro && outro.id !== id) return res.status(409).json({ erro: "Já existe um usuário com esse e-mail." });
     campos.email = email;
   }
-  if ((campos.papel || alvo.papel) === "admin") campos.rota = ""; // administrador vê tudo: não tem rota
   if (b.senha !== undefined) {
     if (!senhaValida(String(b.senha))) return res.status(400).json({ erro: ERRO_SENHA });
     campos.senha = await hashSenha(String(b.senha));
