@@ -659,6 +659,7 @@ function formContrato(cliId){
     <label class="f parc">Periodicidade<select name="periodicidade">${Object.entries(PER).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></label>
     <label class="f parc">Número de parcelas<input name="nParcelas" type="number" min="1" max="360" required value="1"></label>
     <label class="f parc">Valor da parcela (R$)<input name="parcela" type="number" step="0.01" min="0.01"><span class="muted" style="font-weight:400">Pode arredondar aqui: a taxa é recalculada.</span></label>
+    <label class="f sdo">Valor para quitar no vencimento (R$)<input name="quitar" type="number" step="0.01" min="0.01"><span class="muted" style="font-weight:400">Pode arredondar aqui: a taxa é recalculada.</span></label>
     <label class="f"><span id="lblVenc">Vencimento</span><input name="primeiroVenc" type="date" required value="${addMonths(t,1)}"></label>
     <label class="f">Data do contrato<input name="dataContrato" type="date" required value="${t}"></label>
     <label class="f">Forma de liberação<select name="forma"><option>Pix</option><option>Dinheiro</option><option>Transferência</option></select></label>
@@ -668,29 +669,40 @@ function formContrato(cliId){
     <div class="calc full" id="sim"></div>
     <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">${adm?"Criar contrato":"Lançar contrato"}</button></div></form>`);
   const f=$("#fCon"),F=n=>f.elements[n];
-  let fixa=false,erroParcela=""; // fixa = o valor da parcela foi digitado; a taxa passa a ser calculada a partir dele
+  let fixa=false,fixaQ=false,erroParcela=""; // fixa/fixaQ = o valor da parcela (ou o de quitar, no saldo devedor) foi digitado; a taxa passa a ser calculada a partir dele
   const sim=ev=>{
     const alvo=ev&&ev.target&&ev.target.name,sd=F("modalidade").value==="saldo";
     if(alvo==="parcela")fixa=+F("parcela").value>0;
     else if(["valor","taxa","nParcelas","modalidade"].includes(alvo))fixa=false;
+    if(alvo==="quitar")fixaQ=+F("quitar").value>0;
+    else if(["valor","taxa","modalidade"].includes(alvo))fixaQ=false;
     erroParcela="";
+    // saldo devedor: total no vencimento = valor × (1 + taxa/30 × dias)  →  taxa = (total/valor − 1) × 30/dias
+    if(fixaQ&&sd){
+      const V=+F("valor").value,Q=+F("quitar").value,dias=days(F("dataContrato").value||t,F("primeiroVenc").value);
+      if(!(dias>0))erroParcela="O vencimento precisa ser depois da data do contrato.";
+      else if(!(V>0)||Q<V-0.005)erroParcela="O valor para quitar não pode ser menor que o valor emprestado.";
+      else F("taxa").value=String(Math.round((Q/V-1)*30/dias*100*1e6)/1e6);
+    }
     if(fixa&&!sd){
       const tx=taxaDaParcela(F("modalidade").value,+F("valor").value,Math.max(1,parseInt(F("nParcelas").value)||1),+F("parcela").value);
       if(tx===null)erroParcela="Com essa parcela o total fica menor que o valor emprestado.";else F("taxa").value=String(Math.round(tx*10000)/10000);
     }
     const d=formData(f);
-    f.querySelectorAll(".parc").forEach(el=>el.hidden=sd);
+    f.querySelectorAll(".parc").forEach(el=>el.hidden=sd);f.querySelectorAll(".sdo").forEach(el=>el.hidden=!sd);
     $("#lblTaxa").textContent=sd?"Taxa de juros (% ao mês)":"Taxa de juros (% por período)";$("#lblVenc").textContent=sd?"Vencimento":"Primeiro vencimento";
     if(!(+d.valor>0)||!d.primeiroVenc){$("#sim").innerHTML="";return}
+    if(sd&&erroParcela){$("#sim").innerHTML=`<div style="color:var(--bad)">${erroParcela}</div>`;return}
     if(sd){const td=(+d.taxa)/100/30,dias=Math.max(0,days(d.dataContrato||t,d.primeiroVenc)),j=r2(+d.valor*td*dias);
-      $("#sim").innerHTML=`<div><span>Juros por dia</span><span>${money(+d.valor*td)} · ${(td*100).toLocaleString("pt-BR",{maximumFractionDigits:3})}% ao dia</span></div><div><span>Juros até o vencimento (${dias} dias)</span><span>${money(j)}</span></div><div class="t"><span>Para quitar no vencimento</span><span>${money(+d.valor+j)}</span></div><div class="muted">Os juros correm por dia sobre o saldo. Cada pagamento quita primeiro os juros e o resto abate o saldo.</div>`;return}
+      $("#sim").innerHTML=`<div><span>Juros por dia</span><span>${money(+d.valor*td)} · ${(td*100).toLocaleString("pt-BR",{maximumFractionDigits:3})}% ao dia</span></div><div><span>Juros até o vencimento (${dias} dias)</span><span>${money(j)}</span></div><div class="t"><span>Para quitar no vencimento</span><span>${money(+d.valor+j)}</span></div>${fixaQ?`<div><span>Taxa calculada pelo valor</span><b>${(+d.taxa).toLocaleString("pt-BR",{maximumFractionDigits:4})}% ao mês</b></div>`:""}<div class="muted">Os juros correm por dia sobre o saldo. Cada pagamento quita primeiro os juros e o resto abate o saldo.</div>`;
+      if(!fixaQ&&document.activeElement!==F("quitar"))F("quitar").value=(+d.valor+j).toFixed(2);return}
     if(erroParcela){$("#sim").innerHTML=`<div style="color:var(--bad)">${erroParcela}</div>`;return}
     const ps=gerarParcelas(fixa?{...d,parcelaFixa:+d.parcela}:d),tot=ps.reduce((a,p)=>a+p.valor,0);
     if(!fixa&&document.activeElement!==F("parcela"))F("parcela").value=ps[0].valor.toFixed(2);
     $("#sim").innerHTML=`<div><span>Parcela${ps.length>1?"s":""}</span><b>${ps.length}× ${money(ps[0].valor)}${ps.length>1&&ps.at(-1).valor!==ps[0].valor?` (última ${money(ps.at(-1).valor)})`:""}</b></div>${fixa?`<div><span>Taxa calculada pela parcela</span><b>${(+d.taxa).toLocaleString("pt-BR",{maximumFractionDigits:4})}% por período</b></div>`:""}<div><span>Vencimentos</span><span>${fdate(ps[0].venc)}${ps.length>1?" a "+fdate(ps.at(-1).venc):""}</span></div><div><span>Juros totais</span><span>${money(tot-d.valor)}</span></div><div class="t"><span>Total a receber</span><span>${money(tot)}</span></div>`};
   f.oninput=sim;sim();
   f.onsubmit=async e=>{e.preventDefault();const d=formData(f),sd=d.modalidade==="saldo";
-    if(erroParcela&&!sd){toast(erroParcela);return}
+    if(erroParcela){toast(erroParcela);return}
     const c={id:uid("ct"),clienteId:d.clienteId,valor:+d.valor,taxa:+d.taxa,modalidade:d.modalidade,primeiroVenc:d.primeiroVenc,dataContrato:d.dataContrato,obs:d.obs,forma:d.forma,criadoEm:new Date().toISOString()};
     if(sd)Object.assign(c,{vencimento:d.primeiroVenc,movimentos:[],renegociacoes:[],parcelas:[]});
     else{Object.assign(c,{periodicidade:d.periodicidade,nParcelas:+d.nParcelas,multa:+d.multa,mora:+d.mora});if(fixa)c.parcelaFixa=r2(+d.parcela);c.parcelas=gerarParcelas(c)}
