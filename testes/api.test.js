@@ -148,6 +148,10 @@ try {
   const mmOk = await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2, { ...mm, perdao: 10 }] }, adm);
   confere("baixa com juros e capital escolhidos é gravada", mmOk.status === 200);
   if (mmOk.status === 200) await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2] }, adm); // volta ao estado do resto do teste
+  const k1d = (await docs()).find(d => d.id === "k1").dados;
+  confere("contrato guarda quem lançou e ninguém troca depois", k1d.criadoPorNome === "Operador Teste" && typeof k1d.criadoPor === "number", JSON.stringify({ p: k1d.criadoPor, n: k1d.criadoPorNome }));
+  await chama("PATCH", k1, { criadoPor: 999, criadoPorNome: "Outro" }, adm);
+  confere("autor do contrato não muda por gravação", (await docs()).find(d => d.id === "k1").dados.criadoPorNome === "Operador Teste");
   confere("operador não estorna pagamento", (await chama("PATCH", k1, { movimentos: saldo.movimentos }, opc)).status === 403);
   confere("operador não muda o valor de um pagamento já lançado", (await chama("PATCH", k1, { movimentos: [{ ...saldo.movimentos[0], valor: 1 }, m2] }, opc)).status === 403);
   confere("operador não muda valor nem taxa do contrato", (await chama("PATCH", k1, { valor: 50 }, opc)).status === 403 && (await chama("PATCH", k1, { taxa: 1 }, opc)).status === 403);
@@ -251,6 +255,11 @@ try {
   confere("administrador também pode ter rota", rAdm.status === 200 && (await chama("GET", "/api/eu", null, adm)).json.rota === "Rota 1");
   confere("administrador com rota continua vendo as outras rotas", (await docs()).some(d => d.id === "cy" && d.dados.cpf));
   await chama("PATCH", `/api/usuarios/${euAdm.id}`, { rota: "" }, adm);
+  // metas do operador no cadastro (em branco = sem meta)
+  const mt = await chama("PATCH", `/api/usuarios/${novo.json.id}`, { metaVendas: "5000", metaReceb: "" }, adm);
+  const opMt = ((await chama("GET", "/api/usuarios", null, adm)).json || []).find(u => u.id === novo.json.id) || {};
+  confere("administrador define a meta do operador e deixa outra em branco", mt.status === 200 && opMt.meta_vendas === 5000 && opMt.meta_receb === null, JSON.stringify(opMt));
+  confere("meta inválida é recusada", (await chama("PATCH", `/api/usuarios/${novo.json.id}`, { metaVendas: "-3" }, adm)).status === 400);
   confere("e-mail de outro usuário não pode ser repetido", (await chama("PATCH", `/api/usuarios/${novo.json.id}`, { email: ADMIN.email }, adm)).status === 409);
   confere("lista de rotas para o administrador", JSON.stringify((await chama("GET", "/api/rotas", null, adm)).json) === JSON.stringify(["Rota 1", "Rota 2"]));
   confere("operador não lista rotas nem edita usuários", (await chama("GET", "/api/rotas", null, opc)).status !== 200);

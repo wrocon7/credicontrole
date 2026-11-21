@@ -81,9 +81,19 @@ a pasta com o app parado.
   vale para o link de pré-cadastro que ele copia e para os clientes que ele cadastra.
 - **Caixa por rota:** cada lançamento guarda a rota do cliente (lançamentos antigos usam a rota atual do cliente; despesa
   manual escolhe a rota). Em Caixa há abas por rota e o fechamento do mês por rota.
-- **Relatórios:** por mês e por rota: vendas (empréstimos), recebido (juros, capital, parcelas), despesas, resultado,
-  metas (definidas em Configurações → Metas mensais por rota), a receber, em atraso. "Gerar PDF" abre a impressão:
-  escolha "Salvar como PDF".
+- **Período:** o caixa e os relatórios abrem no mês atual; dá para escolher outro mês, "Mês passado", "Este ano" ou
+  datas de/até. Metas mensais são proporcionais ao período (ex.: 15 dias de um mês de 30 = meia meta).
+- **Relatórios** (só administrador), por rota e período, com "Gerar PDF" (impressão → "Salvar como PDF"):
+  - Resumo: vendas, recebido, despesas, resultado, metas, a receber, em atraso, listas do período.
+  - Fechamento de caixa: saldo anterior, entradas e saídas por categoria, por rota, por forma de pagamento e por dia.
+  - Atingimento de metas: por rota e por operador, com quanto falta e a projeção no ritmo atual.
+  - Carteira e inadimplência: atraso por faixa de dias, contratos por situação, carteira por rota, maiores saldos.
+  - Rentabilidade: emprestado, ticket médio, taxa média, juros (parcelas divididas na proporção do contrato; multa e
+    mora contam como juros), descontos, despesas, lucro, capital recuperado.
+  - Comparativo mensal: 12 meses com gráficos de vendas e recebido.
+- **Metas do operador:** em Usuários, cada pessoa pode ter meta mensal de vendas e de recebimento (em branco = sem meta).
+  Vendas = contratos que a pessoa lançou; recebido = pagamentos desses contratos. O sistema grava quem lançou cada
+  contrato e lançamento (`criadoPor`); contratos antigos contam para o operador da rota quando a rota tem um só.
 - **Baixa com juros e capital escolhidos** (saldo devedor): no pagamento, marque "Escolher quanto vai para juros e quanto
   vai para capital". Se os juros pagos forem menores que os do período, escolha se o resto fica no saldo ou vira desconto.
 - **Contrato lançado pelo operador** fica **Aguardando Pix**: não entra no painel, nas cobranças nem nos lembretes, e

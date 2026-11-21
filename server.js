@@ -251,6 +251,11 @@ async function aplica(q, u, { op, col, id, dados, base }, opc = {}) {
   const novo = op === "excluir" ? null : op === "mesclar" ? { ...antes, ...dados } : dados;
   const motivo = (await limitesDoOperador(q, u, op, col, antes, novo)) || proibido(u, op, col, antes, novo, opc);
   if (motivo) throw recusa(403, motivo);
+  if (novo && (col === "contratos" || col === "transacoes")) {
+    if (!antes) Object.assign(novo, { criadoPor: u.id, criadoPorNome: u.nome });
+    else if (antes.criadoPor !== undefined) Object.assign(novo, { criadoPor: antes.criadoPor, criadoPorNome: antes.criadoPorNome });
+    else { delete novo.criadoPor; delete novo.criadoPorNome; }
+  }
   const problema = novo && invalido(col, id, novo);
   if (problema) throw recusa(400, problema);
   if (col === "clientes" && !antes && novo) { const f = faltamNoCliente(novo); if (f.length) throw recusa(400, `Preencha: ${f.join(", ")}.`); }
@@ -304,8 +309,10 @@ app.post("/api/lote", exige(), assincrono(async (req, res) => {
 
 /* ---------- administração ---------- */
 const PAPEIS = ["admin", "operador"];
-const resumoUsuario = u => ({ nome: u.nome, email: u.email, papel: u.papel, ativo: u.ativo, rota: u.rota || "" });
+const resumoUsuario = u => ({ nome: u.nome, email: u.email, papel: u.papel, ativo: u.ativo, rota: u.rota || "", metaVendas: u.meta_vendas ?? null, metaReceb: u.meta_receb ?? null });
 const rotaDe = v => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, 30);
+// meta em reais: vazio ou zero = sem meta; número inválido = undefined (recusado)
+const metaDe = v => { if (v === null || v === undefined || v === "") return null; const n = Math.round(Number(v) * 100) / 100; return Number.isFinite(n) && n >= 0 && n < 1e9 ? (n || null) : undefined; };
 app.get("/api/usuarios", exige("admin"), assincrono(async (req, res) => res.json(await db.usuarios.listar())));
 app.get("/api/rotas", exige("admin"), assincrono(async (req, res) =>
   res.json(String(((await db.ler("config", "geral")) || {}).rotas || "").split(",").map(x => x.trim()).filter(Boolean))));
@@ -316,8 +323,10 @@ app.post("/api/usuarios", exige("admin"), assincrono(async (req, res) => {
   if (!senhaValida(senha)) return res.status(400).json({ erro: ERRO_SENHA });
   try {
     const rota = rotaDe(req.body?.rota); // administrador também pode ter rota (continua vendo tudo)
-    const id = await db.usuarios.criar({ email, nome: nome.slice(0, 120), senha: await hashSenha(senha), papel, rota });
-    audita(req, { acao: "usuario_criado", colecao: "usuarios", id: String(id), depois: { nome, email, papel, rota } });
+    const metaVendas = metaDe(req.body?.metaVendas), metaReceb = metaDe(req.body?.metaReceb);
+    if (metaVendas === undefined || metaReceb === undefined) return res.status(400).json({ erro: "Meta inválida: use um valor em reais ou deixe em branco." });
+    const id = await db.usuarios.criar({ email, nome: nome.slice(0, 120), senha: await hashSenha(senha), papel, rota, metaVendas, metaReceb });
+    audita(req, { acao: "usuario_criado", colecao: "usuarios", id: String(id), depois: { nome, email, papel, rota, metaVendas, metaReceb } });
     res.json({ id });
   } catch (e) {
     if (e.code === "23505") return res.status(409).json({ erro: "Já existe um usuário com esse e-mail." });
@@ -332,6 +341,10 @@ app.patch("/api/usuarios/:id", exige("admin"), assincrono(async (req, res) => {
   if (PAPEIS.includes(b.papel)) campos.papel = b.papel;
   if (typeof b.nome === "string" && b.nome.trim()) campos.nome = b.nome.trim().slice(0, 120);
   if (typeof b.rota === "string") campos.rota = rotaDe(b.rota);
+  for (const [k, col] of [["metaVendas", "meta_vendas"], ["metaReceb", "meta_receb"]]) if (k in b) {
+    const m = metaDe(b[k]); if (m === undefined) return res.status(400).json({ erro: "Meta inválida: use um valor em reais ou deixe em branco." });
+    campos[col] = m;
+  }
   if (typeof b.email === "string" && b.email.trim().toLowerCase() !== alvo.email) {
     const email = b.email.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ erro: "E-mail inválido." });
