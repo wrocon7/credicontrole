@@ -97,8 +97,11 @@ export function invalido(col, id, d) {
         if (!Array.isArray(p.pagamentos ?? []) || (p.pagamentos || []).some(g => !pagamentoOk(g))) return "Pagamento inválido: confira valor e data.";
         // pagamento a menor: motivo obrigatório; o que faltou e os juros não são negativos
         if ((p.pagamentos || []).some(g => (g.motivo != null && (typeof g.motivo !== "string" || g.motivo.length > 300)) ||
-          (g.repasse != null && (typeof g.repasse !== "object" || !String(g.motivo || "").trim() || !numero(g.repasse.valor) || g.repasse.valor <= 0 || !numero(g.repasse.reduz) || g.repasse.reduz < 0 || !numero(g.repasse.juros) || g.repasse.juros < 0))))
-          return "Pagamento a menor inválido: informe o motivo.";
+          (g.repasse != null && (typeof g.repasse !== "object" || !numero(g.repasse.valor) || g.repasse.valor <= 0 || !numero(g.repasse.reduz) || g.repasse.reduz < 0 || !numero(g.repasse.juros) || g.repasse.juros < 0))))
+          return "Pagamento a menor inválido.";
+        // divisão do pagamento entre juros e capital: as duas partes somam o valor recebido
+        if ((p.pagamentos || []).some(g => (g.juros != null || g.capital != null) && (!numero(g.juros) || !numero(g.capital) || g.juros < 0 || g.capital < 0 || Math.abs(g.juros + g.capital - g.valor) > 0.01)))
+          return "Pagamento inválido: juros e capital precisam somar o valor recebido.";
         if (!Array.isArray(p.acrescimos ?? []) || (p.acrescimos || []).some(x => !x || !numero(x.valor) || x.valor < 0 || !numero(x.juros) || x.juros < 0 || !Number.isInteger(x.de)))
           return "Acréscimo de parcela inválido.";
       }

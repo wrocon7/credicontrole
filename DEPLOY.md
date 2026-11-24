@@ -231,8 +231,14 @@ O script cria o usuário `volume@teste.local` e grava a senha em `login-volume.t
 - Envio de foto do documento no pré-cadastro.
 - Franquias com permissão separada (hoje todo usuário vê a carteira inteira).
 
-- **Pagamento a menor (parcelados):** quando o valor recebido é menor que o devido, o sistema pede o **motivo** e
+- **Pagamento a menor (parcelados):** quando o valor recebido é menor que o devido, o sistema pede um **motivo (opcional)** e
   pergunta o que fazer com o que faltou: somar na próxima parcela em aberto (a parcela atual fica "Paga a menor") ou
   deixar em aberto na mesma parcela. O campo **Juros por atraso** (em % ou R$) só aparece nesse caso e soma os juros
   junto com o que faltou. O estorno desfaz o repasse; se a parcela que recebeu o valor já tiver pagamento, estorne
   ela antes. O servidor só aceita mudança no valor de uma parcela quando ela vem junto com o pagamento que a causou.
+
+- **Juros e capital em cada pagamento (parcelados):** a tela de receber parcela traz "Quanto é juros" e "Quanto é
+  capital", já divididos na proporção do contrato; mudando um, o outro completa o valor. Fica gravado no pagamento
+  (`juros`, `capital`) e no lançamento do caixa. A ficha do contrato mostra capital e juros recebidos e o capital em
+  aberto; a ficha do cliente ganhou o quadro **Pagamentos** com os totais e cada pagamento separado. Pagamentos antigos
+  sem divisão usam a proporção do contrato.

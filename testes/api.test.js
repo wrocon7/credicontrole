@@ -169,11 +169,13 @@ try {
   const pagMenor = (motivo, sobe) => ({ parcelas: [
     { ...q1, valor: 150, valorOriginal: 200, quitada: true, pagamentos: [{ data: "2026-02-10", valor: 150, txId: "tm", ...(motivo ? { motivo } : {}), repasse: { valor: 50, juros: 5, reduz: 50, para: 2 } }] },
     { ...q2, valor: 200 + sobe, valorOriginal: 200, acrescimos: [{ de: 1, valor: 50, juros: 5, txId: "tm", motivo }] }] });
-  confere("pagamento a menor sem motivo é recusado", (await chama("PATCH", k4, pagMenor("", 55), opc)).status === 400);
+  const semMotivo = pagMenor("", 55); semMotivo.parcelas[0].pagamentos[0].juros = 100; semMotivo.parcelas[0].pagamentos[0].capital = 10;
+  confere("juros e capital que não somam o pagamento são recusados", (await chama("PATCH", k4, semMotivo, opc)).status === 400);
   confere("operador não aumenta a próxima parcela além do que faltou", (await chama("PATCH", k4, pagMenor("pediu prazo", 80), opc)).status === 403);
   confere("operador não muda o valor da parcela sem pagamento", (await chama("PATCH", k4, { parcelas: [{ ...q1, valor: 100 }, q2] }, opc)).status === 403);
-  const pm = await chama("PATCH", k4, pagMenor("pediu prazo", 55), opc);
-  confere("pagamento a menor leva o que faltou e os juros para a próxima parcela", pm.status === 200, JSON.stringify(pm.body));
+  const comDiv = pagMenor("", 55); Object.assign(comDiv.parcelas[0].pagamentos[0], { juros: 50, capital: 100 });
+  const pm = await chama("PATCH", k4, comDiv, opc);
+  confere("pagamento a menor sem motivo, com juros e capital escolhidos, leva o que faltou para a próxima parcela", pm.status === 200, JSON.stringify(pm.body));
   confere("operador não estorna o repasse", (await chama("PATCH", k4, { parcelas: [q1, q2] }, opc)).status === 403);
   confere("administrador estorna o repasse", (await chama("PATCH", k4, { parcelas: [q1, q2] }, adm)).status === 200);
   confere("operador não cancela contrato", (await chama("PATCH", k1, { cancelado: true }, opc)).status === 403);

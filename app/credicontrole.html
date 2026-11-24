@@ -258,6 +258,18 @@ function encargos(p,c,ref){
   return {atraso,multa,mora,total,pago,devido:Math.max(0,r2(total-pago))};
 }
 const quitadaP=p=>!!p.quitada;
+// juros e capital de um pagamento de parcela: o que foi digitado na baixa; sem isso, a proporção do contrato
+// (juros totais ÷ total das parcelas), e o que passa do valor da parcela (multa, mora) é juros
+function jurosAuto(c,p,v){const tot=(c.parcelas||[]).reduce((a,q)=>a+(+q.valor||0),0);if(!(tot>0))return 0;
+  const extra=p?Math.max(0,v-(+p.valor||0)):0;return r2(Math.min(v,extra+(v-extra)*Math.max(0,tot-(+c.valor||0))/tot))}
+function divPag(c,p,g){const v=+g.valor||0;if(g.juros!=null&&g.capital!=null)return {juros:+g.juros,capital:+g.capital};const j=jurosAuto(c,p,v);return {juros:j,capital:r2(v-j)}}
+// todos os pagamentos de um contrato, com juros e capital separados
+function pagsDe(c){
+  if(isSaldo(c))return extrato(c).linhas.filter(l=>l.mov).map(l=>({data:l.data,valor:l.valor,juros:l.pj,capital:l.cap,ref:"Pagamento",forma:l.mov.forma||""}));
+  return (c.parcelas||[]).flatMap(p=>(p.pagamentos||[]).map(g=>({data:g.data,valor:+g.valor,...divPag(c,p,g),ref:`Parcela ${p.n}/${c.parcelas.length}`,forma:g.forma||""})));
+}
+function resumoPags(c){const ps=pagsDe(c),capital=r2(ps.reduce((a,x)=>a+x.capital,0));
+  return {ps,pago:r2(ps.reduce((a,x)=>a+x.valor,0)),juros:r2(ps.reduce((a,x)=>a+x.juros,0)),capital,capAberto:isSaldo(c)?extrato(c).saldoBase:Math.max(0,r2((+c.valor||0)-capital))}}
 /* saldo:inicio — modalidade "saldo devedor": juros simples por dia corrido (taxa mensal ÷ 30) sobre o saldo,
    desde a última movimentação; cada pagamento quita primeiro os juros do período e o resto abate o saldo.
    Juros não pagos ficam no saldo e passam a render juros no movimento seguinte. */
@@ -599,9 +611,9 @@ const nomeResp=(id,c)=>{const u=usuariosL().find(x=>String(x.id)===id);return u?
 const conId=id=>S.contratos.find(k=>k.id===id);
 // juros dentro de uma parcela recebida: a parte dos juros no total do contrato parcelado
 // multa e mora (o que passa do valor da parcela) também são juros
-function jurosDaParcela(x){const k=conId(x.contratoId);if(!k||isSaldo(k))return 0;const tot=soma(k.parcelas||[],p=>p.valor);if(!(tot>0))return 0;
-  const v=+x.valor||0,p=(k.parcelas||[]).find(q=>(q.pagamentos||[]).some(g=>g.txId===x.id)),extra=p?Math.max(0,v-(+p.valor||0)):0;
-  return r2(extra+(v-extra)*Math.max(0,tot-(+k.valor||0))/tot)}
+function jurosDaParcela(x){const k=conId(x.contratoId);if(!k||isSaldo(k))return 0;
+  const p=(k.parcelas||[]).find(q=>(q.pagamentos||[]).some(g=>g.txId===x.id)),g=p&&p.pagamentos.find(g=>g.txId===x.id);
+  return g?divPag(k,p,g).juros:jurosAuto(k,null,+x.valor||0)}
 function numsRel(R,P){
   const cons=S.contratos.filter(c=>!c.cancelado&&!c.pendente&&daRota(c,R));
   const novos=cons.filter(c=>noPer(c.dataContrato,P)).sort((a,b)=>a.dataContrato.localeCompare(b.dataContrato));
@@ -738,7 +750,18 @@ function verCliente(id){
   openDrawer(`<div class="hd"><div><h2>${esc(c.nome)}${ex(c)}</h2><div class="muted">${c.status==="pre"?"Pré-cadastro":c.status==="bloqueado"?"Bloqueado":"Cliente ativo"}</div></div><button data-act="close" aria-label="Fechar">Fechar</button></div>
   <div class="panel"><div class="body dl">${[["CPF",c.cpf],["RG",c.rg],["Telefone",c.telefone],["E-mail",c.email],["Endereço",c.endereco],["Indicação",c.indicacao],["Profissão",c.profissao],["Empresa",c.empresa],["Endereço do trabalho",c.enderecoTrabalho],["Tempo de carteira",c.tempoRegistro],["Renda mensal",c.renda?money(c.renda):""],["Rota",c.rota],["Origem",c.origem==="link"?"Link de pré-cadastro"+(c.franquia?" · "+c.franquia:""):"Cadastro manual"],["Lembretes no WhatsApp",c.semLembrete?"Não quer receber":"Recebe"],["Cadastrado em",fdate((c.criadoEm||"").slice(0,10))]].map(([k,v])=>`<div><span>${k}</span><b>${esc(v||"—")}</b></div>`).join("")}${c.referencias?`<div style="grid-column:1/-1;white-space:pre-line"><span>Contatos de referência</span>${esc(c.referencias)}</div>`:""}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
   <div class="row"><button data-act="editCliente" data-id="${id}">Editar dados</button>${c.status!=="pre"?`<button class="pri" data-act="novoContrato" data-cli="${id}">Novo contrato</button>`:`<button class="pri" data-act="aprovar" data-id="${id}">Aprovar cadastro</button>`}<button data-act="bloquear" data-id="${id}">${c.status==="bloqueado"?"Desbloquear":"Bloquear"}</button><button class="danger" data-act="delCliente" data-id="${id}">Excluir</button></div>
-  <section class="panel"><header><h2>Contratos</h2></header>${conRows(cs)}</section>`);
+  <section class="panel"><header><h2>Contratos</h2></header>${conRows(cs)}</section>
+  ${histCliente(cs)}`);
+}
+// histórico de pagamentos do cliente, com o total de capital e de juros (por contrato e no geral)
+function histCliente(cs){
+  const ok=cs.filter(k=>!k.pendente),rs=ok.map(k=>({k,...resumoPags(k)})),todos=rs.flatMap(r=>r.ps.map(x=>({...x,k:r.k}))).sort((a,b)=>b.data.localeCompare(a.data));
+  if(!todos.length)return `<section class="panel"><header><h2>Pagamentos</h2></header><div class="body muted">Nenhum pagamento ainda.</div></section>`;
+  const T=k=>money(r2(rs.reduce((a,r)=>a+r[k],0)));
+  return `<section class="panel"><header><h2>Pagamentos</h2><span class="muted">${todos.length} pagamento${todos.length>1?"s":""}</span></header>
+  <div class="body dl">${[["Total pago",T("pago")],["Capital pago",T("capital")],["Juros pagos",T("juros")],["Capital em aberto",money(r2(rs.filter(r=>!r.k.cancelado).reduce((a,r)=>a+r.capAberto,0)))]].map(([a,b])=>`<div><span>${a}</span><b>${b}</b></div>`).join("")}</div>
+  ${rs.length>1?`<div class="tbl"><table><thead><tr><th>Contrato</th><th class="num">Emprestado</th><th class="num">Pago</th><th class="num">Capital</th><th class="num">Juros</th><th class="num">Capital em aberto</th></tr></thead><tbody>${rs.map(r=>`<tr class="click" data-act="verContrato" data-id="${r.k.id}"><td>${fdate(r.k.dataContrato)} · ${MOD[r.k.modalidade]||""}</td><td class="num">${money(r.k.valor)}</td><td class="num">${money(r.pago)}</td><td class="num">${money(r.capital)}</td><td class="num">${money(r.juros)}</td><td class="num">${money(r.capAberto)}</td></tr>`).join("")}</tbody></table></div>`:""}
+  <div class="tbl"><table><thead><tr><th>Data</th><th>Contrato</th><th>Referente</th><th class="num">Valor</th><th class="num">Capital</th><th class="num">Juros</th></tr></thead><tbody>${todos.map(x=>`<tr class="click" data-act="verContrato" data-id="${x.k.id}"><td>${fdate(x.data)}</td><td>${fdate(x.k.dataContrato)} · ${money(x.k.valor)}</td><td>${x.ref}${x.forma?" · "+esc(x.forma):""}</td><td class="num">${money(x.valor)}</td><td class="num">${money(x.capital)}</td><td class="num">${money(x.juros)}</td></tr>`).join("")}</tbody></table></div></section>`;
 }
 function verContratoSaldo(c){
   const cl=cli(c.clienteId),x=extrato(c),t=today(),aberto=!c.cancelado&&!x.quitado,atraso=Math.max(0,days(c.vencimento,t));
@@ -757,14 +780,15 @@ function verContrato(id){
   const c=S.contratos.find(x=>x.id===id);if(!c)return;
   if(isSaldo(c))return verContratoSaldo(c);
   const cl=cli(c.clienteId),ps=c.parcelas||[];
-  const totalC=r2(ps.reduce((a,p)=>a+p.valor,0)),pago=r2(ps.reduce((a,p)=>a+pagoP(p),0));
+  const totalC=r2(ps.reduce((a,p)=>a+p.valor,0)),pago=r2(ps.reduce((a,p)=>a+pagoP(p),0)),rp=resumoPags(c);
   openDrawer(`<div class="hd"><div><h2>Contrato de ${esc(cl.nome)}${ex(c)}</h2><div class="row" style="margin-top:4px">${pillC(c)}<span class="muted">${MOD[c.modalidade]} · ${PER[c.periodicidade]}</span></div></div><button data-act="close">Fechar</button></div>
-  ${bannerPend(c)}${bannerInad(c)}<div class="panel"><div class="body dl">${[["Valor emprestado",money(c.valor)],["Taxa",(+c.taxa).toLocaleString("pt-BR")+"% ao período"],["Total do contrato",money(totalC)],["Lucro previsto",money(totalC-c.valor)],["Já recebido",money(pago)],["Saldo em aberto",money(saldoContrato(c))],["Data do contrato",fdate(c.dataContrato)],["Multa / mora",`${esc(c.multa)}% + ${esc(c.mora)}%/dia`]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("")}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
+  ${bannerPend(c)}${bannerInad(c)}<div class="panel"><div class="body dl">${[["Valor emprestado",money(c.valor)],["Taxa",(+c.taxa).toLocaleString("pt-BR")+"% ao período"],["Total do contrato",money(totalC)],["Lucro previsto",money(totalC-c.valor)],["Já recebido",money(pago)],["Capital recebido",money(rp.capital)],["Juros recebidos",money(rp.juros)],["Capital em aberto",money(rp.capAberto)],["Saldo em aberto",money(saldoContrato(c))],["Data do contrato",fdate(c.dataContrato)],["Multa / mora",`${esc(c.multa)}% + ${esc(c.mora)}%/dia`]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("")}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
   <section class="panel"><header><h2>Parcelas</h2></header><div class="tbl"><table><thead><tr><th>#</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Encargos</th><th class="num">Pago</th><th>Situação</th><th></th></tr></thead><tbody>${ps.map(p=>{const e=encargos(p,c);const st=quitadaP(p)?((p.pagamentos||[]).some(g=>g.repasse)?`<span class="pill warn">Paga a menor ${fdate((p.pagamentos.at(-1)||{}).data)}</span>`:`<span class="pill ok">Paga ${fdate((p.pagamentos.at(-1)||{}).data)}</span>`):e.atraso?`<span class="pill bad">${e.atraso} dias</span>`:e.pago>0?'<span class="pill warn">Parcial</span>':'<span class="pill">Aberta</span>';
     const nota=t=>`<div class="muted" style="font-family:var(--f-body);font-size:12px;line-height:1.35;white-space:normal;min-width:190px;margin-top:2px">${t}</div>`;
     const acr=(p.acrescimos||[]).map(a=>nota(`${a.valor?`+ ${money(a.valor)} da parcela ${a.de}`:""}${a.valor&&a.juros?" ":""}${a.juros?`+ ${money(a.juros)} de juros`:""}`)).join("");
-    const rep=(p.pagamentos||[]).filter(g=>g.motivo).map(g=>nota(`${g.repasse?`faltou ${money(g.repasse.valor)} → parcela ${g.repasse.para}`:"pago a menor"} · motivo: ${esc(g.motivo)}`)).join("");
-    return `<tr><td>${p.n}</td><td>${fdate(p.venc)}</td><td class="num">${money(p.valor)}${acr}</td><td class="num">${quitadaP(p)?"—":money(e.multa+e.mora)}</td><td class="num">${money(e.pago)}${rep}</td><td>${st}</td><td><div class="row">${!quitadaP(p)&&!c.cancelado?`<button class="sm pri" data-act="pagar" data-id="${c.id}" data-n="${p.n}">Receber</button><button class="sm" data-act="cobrar" data-id="${c.id}" data-n="${p.n}">Cobrar</button>`:""}${(p.pagamentos||[]).length?`<button class="sm" data-act="estornar" data-id="${c.id}" data-n="${p.n}">Estornar</button>`:""}</div></td></tr>`}).join("")}</tbody></table></div></section>
+    const rep=(p.pagamentos||[]).filter(g=>g.repasse||g.motivo).map(g=>nota(`${g.repasse?`faltou ${money(g.repasse.valor)} → parcela ${g.repasse.para}`:"pago a menor"}${g.motivo?" · motivo: "+esc(g.motivo):""}`)).join("");
+    const dv=(p.pagamentos||[]).map(g=>divPag(c,p,g)),div=dv.length?nota(`capital ${money(r2(dv.reduce((a,x)=>a+x.capital,0)))} · juros ${money(r2(dv.reduce((a,x)=>a+x.juros,0)))}`):"";
+    return `<tr><td>${p.n}</td><td>${fdate(p.venc)}</td><td class="num">${money(p.valor)}${acr}</td><td class="num">${quitadaP(p)?"—":money(e.multa+e.mora)}</td><td class="num">${money(e.pago)}${div}${rep}</td><td>${st}</td><td><div class="row">${!quitadaP(p)&&!c.cancelado?`<button class="sm pri" data-act="pagar" data-id="${c.id}" data-n="${p.n}">Receber</button><button class="sm" data-act="cobrar" data-id="${c.id}" data-n="${p.n}">Cobrar</button>`:""}${(p.pagamentos||[]).length?`<button class="sm" data-act="estornar" data-id="${c.id}" data-n="${p.n}">Estornar</button>`:""}</div></td></tr>`}).join("")}</tbody></table></div></section>
   <div class="row">${!c.cancelado&&statusC(c)!=="quitado"?`${btnInad(c)}<button data-act="cancelarC" data-id="${id}">Cancelar contrato</button>`:""}<button class="danger" data-act="delContrato" data-id="${id}">Excluir contrato</button><button data-act="verCliente" data-id="${c.clienteId}">Ver cliente</button></div>`);
 }
 
@@ -906,10 +930,13 @@ function formPagar(cid,n){
   <form id="fPag" class="form"><label class="f">Valor recebido (R$)<input name="valor" type="number" step="0.01" min="0.01" required value="${e.devido.toFixed(2)}"></label>
   <label class="f">Data do pagamento<input name="data" type="date" required value="${today()}"></label>
   <label class="f full">Forma<select name="forma"><option>Pix</option><option>Dinheiro</option><option>Transferência</option><option>Cartão</option></select></label>
+  <label class="f">Quanto é juros (R$)<input name="pjuros" type="number" step="0.01" min="0"></label>
+  <label class="f">Quanto é capital (R$)<input name="pcap" type="number" step="0.01" min="0"></label>
+  <p class="muted full" style="margin:-4px 0 0;font-size:12.5px">Vem dividido na proporção do contrato. Se combinou diferente com o cliente (ex.: 400 = 300 de capital + 100 de juros), mude um dos dois: o outro se ajusta.</p>
   <div id="menor" class="full" hidden style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--warn-bg,#fff8e6)">
     <b>Pagamento menor que o devido</b> <span class="muted" id="mFaltou"></span>
     <div class="form" style="margin-top:8px">
-      <label class="f full">Motivo do pagamento menor<input name="motivo" maxlength="300" placeholder="Ex.: cliente pediu para pagar o resto na próxima"></label>
+      <label class="f full">Motivo (opcional)<input name="motivo" maxlength="300" placeholder="Ex.: cliente pediu para pagar o resto na próxima"></label>
       <label class="f full">O que faltou<select name="destino">${prox?`<option value="prox">Somar na próxima parcela (${prox.n}/${c.parcelas.length}, vence ${fdate(prox.venc)})</option>`:""}<option value="esta">Deixar em aberto nesta parcela</option></select></label>
       <label class="f">Juros por atraso (%)<input name="jurosPct" type="number" step="0.01" min="0" placeholder="0"></label>
       <label class="f">Juros por atraso (R$)<input name="jurosVal" type="number" step="0.01" min="0" placeholder="0,00"></label>
@@ -920,11 +947,18 @@ function formPagar(cid,n){
   // pagamento menor que o devido: pede o motivo, leva o que faltou para a próxima parcela e permite cobrar juros por atraso
   const f=$("#fPag"),F=k=>f.elements[k];
   const conta=()=>{const ed=encargos(p,c,F("data").value||today()),v=r2(+F("valor").value||0),faltou=r2(ed.devido-v),menor=v>0&&faltou>0.009;
-    $("#menor").hidden=!menor;F("motivo").required=menor;if(!menor)return;
+    $("#menor").hidden=!menor;if(!menor)return;
     const j=r2(+F("jurosVal").value||0),nx=F("destino").value==="prox"&&prox;
     $("#mFaltou").textContent="· faltou "+money(faltou);
     $("#mResumo").textContent=nx?`A parcela ${prox.n} passa de ${money(prox.valor)} para ${money(r2(prox.valor+faltou+j))} (${money(faltou)} que faltou${j?" + "+money(j)+" de juros":""}). Esta parcela fica paga.`
       :`Ficam em aberto nesta parcela ${money(r2(faltou+j))}${j?" (com "+money(j)+" de juros)":""}.`};
+  // divisão juros/capital: automática até a pessoa mexer; mexendo em um, o outro completa o valor recebido
+  let divManual=false;const divAuto=()=>{if(divManual)return;const v=r2(+F("valor").value||0),j=jurosAuto(c,p,v);F("pjuros").value=j.toFixed(2);F("pcap").value=r2(v-j).toFixed(2)};
+  f.addEventListener("input",ev=>{const n=ev.target.name,v=r2(+F("valor").value||0);
+    if(n==="pjuros"){divManual=true;F("pcap").value=Math.max(0,r2(v-(+F("pjuros").value||0))).toFixed(2)}
+    if(n==="pcap"){divManual=true;F("pjuros").value=Math.max(0,r2(v-(+F("pcap").value||0))).toFixed(2)}
+    if(n==="valor"){if(divManual)F("pcap").value=Math.max(0,r2(v-(+F("pjuros").value||0))).toFixed(2);else divAuto()}});
+  divAuto();
   f.addEventListener("input",ev=>{const n=ev.target.name;if(n==="jurosPct"||n==="valor"||n==="data"){const ed=encargos(p,c,F("data").value||today()),faltou=Math.max(0,r2(ed.devido-(+F("valor").value||0)));if(F("jurosPct").value!=="")F("jurosVal").value=r2(faltou*(+F("jurosPct").value||0)/100).toFixed(2)}
     if(n==="jurosVal")F("jurosPct").value="";conta()});
   f.addEventListener("change",conta);
@@ -935,9 +969,10 @@ function formPagar(cid,n){
     const ed=encargos(p2,c2,d.data),txId=uid("tx"),faltou=r2(ed.devido-v),menor=faltou>0.009;
     if(v>ed.devido+0.009){toast("O valor passa do total devido ("+money(ed.devido)+").");return}
     const motivo=String(d.motivo||"").trim().slice(0,300),juros=menor?Math.max(0,r2(+d.jurosVal||0)):0;
-    if(menor&&!motivo){toast("Informe o motivo do pagamento menor.");F("motivo").focus();return}
+    const pj=r2(+d.pjuros||0),pc=r2(+d.pcap||0);
+    if(pj<0||pc<0||Math.abs(pj+pc-v)>0.009){toast(`Juros + capital (${money(r2(pj+pc))}) precisam dar o valor recebido (${money(v)}).`);return}
     const nx=menor&&d.destino==="prox"?c2.parcelas.find(x=>x.n>n&&!quitadaP(x)):null;
-    const pg={data:d.data,valor:v,txId,forma:d.forma,...(menor?{motivo}:{})};
+    const pg={data:d.data,valor:v,txId,forma:d.forma,juros:pj,capital:pc,...(menor&&motivo?{motivo}:{})};
     let parcelas;
     if(nx){ // o que faltou (e os juros) vai para a próxima parcela; esta fica paga com o valor recebido
       const reduz=r2(Math.min(p2.valor,faltou));
@@ -945,7 +980,7 @@ function formPagar(cid,n){
         :x.n===nx.n?{...x,valor:r2(x.valor+faltou+juros),valorOriginal:x.valorOriginal??x.valor,acrescimos:[...(x.acrescimos||[]),{de:n,valor:faltou,juros,txId,motivo}]}:x);
     }else parcelas=c2.parcelas.map(x=>x.n!==n?x:{...x,...(juros?{valor:r2(x.valor+juros),valorOriginal:x.valorOriginal??x.valor,acrescimos:[...(x.acrescimos||[]),{de:n,valor:0,juros,txId,motivo}]}:{}),pagamentos:[...(x.pagamentos||[]),pg],quitada:!menor});
     try{await gravaJuntos([{op:"mesclar",col:"contratos",id:cid,dados:{parcelas}},
-        {op:"gravar",col:"transacoes",id:txId,dados:{tipo:"entrada",valor:v,data:d.data,categoria:"Recebimento de parcela",descricao:`Parcela ${n}/${c2.parcelas.length} · ${cli(c2.clienteId).nome}${menor?" · pagou a menor":""}`,forma:d.forma,contratoId:cid,clienteId:c2.clienteId,rota:rotaCli(c2.clienteId),...(menor?{motivo}:{}),criadoEm:new Date().toISOString()}}]);
+        {op:"gravar",col:"transacoes",id:txId,dados:{tipo:"entrada",valor:v,data:d.data,categoria:"Recebimento de parcela",descricao:`Parcela ${n}/${c2.parcelas.length} · ${cli(c2.clienteId).nome} · capital ${money(pc)} (juros ${money(pj)})${menor?" · pagou a menor":""}`,forma:d.forma,contratoId:cid,clienteId:c2.clienteId,rota:rotaCli(c2.clienteId),juros:pj,capital:pc,...(menor&&motivo?{motivo}:{}),criadoEm:new Date().toISOString()}}]);
       closeTop();toast(!menor?"Parcela quitada":nx?`Pagamento menor registrado: ${money(r2(faltou+juros))} foram para a parcela ${nx.n}`:"Pagamento parcial registrado");if($(".drawer"))verContrato(cid)}catch(_){}};
 }
 function formPagarSaldo(cid){
