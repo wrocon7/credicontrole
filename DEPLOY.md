@@ -248,3 +248,8 @@ O script cria o usuário `volume@teste.local` e grava a senha em `login-volume.t
   permissão de câmera (`Permissions-Policy`). O servidor aceita só JPEG de até 400 KB e grava na tabela `fotos`
   (fora de `docs`); a ficha do cliente mostra a foto com data e hora. Abre para o administrador e para o operador da
   rota do cliente; é apagada junto com o cliente. A cópia de segurança (JSON) **não** inclui as fotos.
+- **Parcelas e lista de contratos (nov/2026):** a tabela de parcelas troca "Encargos" por **Capital** e **Juros** (em cinza, a
+  previsão pela proporção do contrato; depois do pagamento, o que foi lançado). Multa e mora aparecem como nota sob o valor.
+  Receber **mais** que o devido é aceito: o que passa entra como juros e a parcela fica paga. Contratos tem só as abas
+  **Geral** e **Aguardando Pix**; Geral agrupa pelo vencimento da próxima parcela (Atrasados, Vencem hoje, Próximos 7 dias,
+  Restante do mês, Mais adiante), com Quitados e Cancelados fechados no fim, e mostra a coluna "Próx. vencimento".
