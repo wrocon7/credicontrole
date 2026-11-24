@@ -449,9 +449,11 @@ VIEWS.dashboard=()=>{
   const taxa=saldo>0?vAtras/saldo*100:0;
   const d=new Date(),dow=(d.getDay()+6)%7,ini=addDays(t,-dow),fim=addDays(ini,6),mes=t.slice(0,7);
   const soma=f=>ab.filter(f).reduce((a,x)=>a+x.e.devido,0);
-  const hoje=soma(x=>x.p.venc===t),sem=soma(x=>x.p.venc>=ini&&x.p.venc<=fim&&x.p.venc>=t),mesV=soma(x=>x.p.venc.slice(0,7)===mes&&x.p.venc>=t);
+  // os mesmos filtros das abas de Cobranças que os cartões abrem, para o número bater com a lista
+  const fHoje=x=>x.p.venc===t,fSem=x=>x.p.venc>=t&&x.p.venc<=addDays(t,7),fMes=x=>x.p.venc>=t&&x.p.venc.slice(0,7)===mes;
+  const hoje=soma(fHoje),sem=soma(fSem),mesV=soma(fMes);
+  const nCon=fl=>{const n=new Set(ab.filter(fl).map(x=>x.c.id)).size;return n+(n===1?" contrato":" contratos")};
   const inadMes=atras.filter(x=>x.p.venc.slice(0,7)===mes);
-  const semana=Math.ceil(((parse(t)-new Date(d.getFullYear(),0,1))/864e5+new Date(d.getFullYear(),0,1).getDay()+1)/7);
   // recebimentos 30 dias
   const rec=[];for(let i=29;i>=0;i--){const dd=addDays(t,-i);rec.push({l:fdate(dd).slice(0,5),t:fdate(dd),v:S.transacoes.filter(x=>x.tipo==="entrada"&&x.contratoId&&x.data===dd).reduce((a,x)=>a+(+x.valor||0),0),hi:i===0})}
   // inadimplência 12 meses (valor vencido e ainda em aberto, por mês de vencimento)
@@ -464,10 +466,10 @@ VIEWS.dashboard=()=>{
     ${kpi("Saldo a receber",money(saldo),`${ativos.length} contratos ativos`)}
     ${kpi("Taxa de inadimplência",taxa.toLocaleString("pt-BR",{maximumFractionDigits:1})+"%",`${money(vAtras)} em ${cAtras} contratos`,taxa>0?"bad":"")}
   </div><div class="kpis">
-    ${kpi("A receber hoje",money(hoje),fdate(t),"link","cobrancas","hoje")}
-    ${kpi("A receber esta semana",money(sem),"Semana "+semana,"link","cobrancas","semana")}
-    ${kpi("A receber este mês",money(mesV),parse(t).toLocaleDateString("pt-BR",{month:"long",year:"numeric"}),"link","cobrancas","mes")}
-    ${kpi("Inadimplência do mês",money(inadMes.reduce((a,x)=>a+x.e.devido,0)),`${new Set(inadMes.map(x=>x.c.id)).size} contratos atrasados`,"bad link","inadimplentes")}
+    ${kpi("A receber hoje",money(hoje),fdate(t)+" · "+nCon(fHoje),"link","cobrancas","hoje")}
+    ${kpi("A receber esta semana",money(sem),"próximos 7 dias · "+nCon(fSem),"link","cobrancas","semana")}
+    ${kpi("A receber este mês",money(mesV),parse(t).toLocaleDateString("pt-BR",{month:"long"})+" · "+nCon(fMes),"link","cobrancas","mes")}
+    ${kpi("Inadimplência do mês",money(inadMes.reduce((a,x)=>a+x.e.devido,0)),nCon(x=>inadMes.includes(x))+" atrasado"+(new Set(inadMes.map(x=>x.c.id)).size===1?"":"s"),"bad link","inadimplentes")}
   </div>
   <div class="grid2" style="margin-bottom:14px">
     <section class="panel chart"><header><h2>Recebimentos nos últimos 30 dias</h2><span class="muted">por dia</span></header><div class="body">${bars(rec,{lblEvery:5})}</div></section>
