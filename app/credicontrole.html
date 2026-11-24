@@ -870,7 +870,7 @@ function formContrato(cliId){
   openModal(`<h3>Novo contrato</h3>${adm?"":'<div class="banner" style="margin:0">O contrato fica aguardando o administrador confirmar o Pix. Só depois disso ele passa a valer.</div>'}<form id="fCon" class="form">
     <label class="f full">Cliente<select name="clienteId" required>${cls.map(c=>`<option value="${c.id}" ${c.id===cliId?"selected":""}>${esc(c.nome)}</option>`).join("")}</select></label>
     <label class="f">Valor emprestado (R$)<input name="valor" type="number" step="0.01" min="1" required value="1000"></label>
-    <label class="f">Modalidade<select name="modalidade">${Object.entries(MOD).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></label>
+    <label class="f">Modalidade<select name="modalidade">${Object.entries(MOD).sort(([a],[b])=>(b==="price")-(a==="price")).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></label>
     <label class="f"><span id="lblTaxa">Taxa de juros (% ao mês)</span><input name="taxa" type="number" step="any" min="0" required value="${cfg("taxa")}"></label>
     <label class="f parc">Periodicidade<select name="periodicidade">${Object.entries(PER).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></label>
     <label class="f parc">Número de parcelas<input name="nParcelas" type="number" min="1" max="360" required value="1"></label>
