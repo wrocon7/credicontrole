@@ -20,8 +20,8 @@ async function poolEmbutido(pasta) {
   let fila = Promise.resolve();
   const vez = () => { let solta; const antes = fila; fila = new Promise(r => (solta = r)); return antes.then(() => solta); };
   const roda = async (sql, params = []) => {
-    // objetos viram JSON (colunas jsonb); listas seguem como array do Postgres (ex.: "= any($1)")
-    const r = await lite.query(sql, params.map(p => (p !== null && typeof p === "object" && !Array.isArray(p) ? JSON.stringify(p) : p)));
+    // objetos viram JSON (colunas jsonb); listas seguem como array do Postgres (ex.: "= any($1)"); bytes (foto) seguem como bytea
+    const r = await lite.query(sql, params.map(p => (p !== null && typeof p === "object" && !Array.isArray(p) && !ArrayBuffer.isView(p) ? JSON.stringify(p) : p)));
     return { rows: r.rows, rowCount: r.affectedRows || r.rows.length }; // SELECT vem com affectedRows = 0
   };
   return {
@@ -62,6 +62,9 @@ export async function migrar() {
   await pool.query(`create table if not exists lembretes(
     chave text primary key, quando timestamptz not null default now(), contrato_id text, cliente_id text, nome text,
     telefone text, valor numeric, vencimento text, status text not null, erro text, wamid text)`);
+  // foto do cliente tirada na hora no pré-cadastro (JPEG); fica fora de docs para não pesar a lista que as telas baixam
+  await pool.query(`create table if not exists fotos(
+    cliente_id text primary key, jpeg bytea not null, tirada timestamptz, criado timestamptz not null default now())`);
   await pool.query(`create table if not exists auditoria(
     id bigserial primary key, quando timestamptz not null default now(), usuario_id integer, usuario text,
     acao text not null, colecao text, doc_id text, antes jsonb, depois jsonb, ip text)`);
@@ -179,6 +182,14 @@ export const lembretes = {
     : {},
   recentes: async () => (await pool.query("select chave, quando, nome, telefone, valor, vencimento, status, erro from lembretes order by quando desc limit 100")).rows
     .map(r => ({ ...r, valor: r.valor === null ? null : Number(r.valor) })),
+};
+
+export const fotos = {
+  gravar: async (id, jpeg, tirada) => pool.query(
+    "insert into fotos (cliente_id, jpeg, tirada) values ($1, $2, $3) on conflict (cliente_id) do update set jpeg = excluded.jpeg, tirada = excluded.tirada, criado = now()",
+    [id, jpeg, tirada]),
+  ler: async id => (await pool.query("select jpeg, tirada from fotos where cliente_id = $1", [id])).rows[0] || null,
+  apagar: async (id, q = pool) => q.query("delete from fotos where cliente_id = $1", [id]),
 };
 
 export const usuarios = {

@@ -63,7 +63,7 @@ app.use((req, res, next) => {
   res.locals.nonce = crypto.randomBytes(16).toString("base64");
   res.set({
     "Content-Security-Policy": csp(res.locals.nonce), "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin",
-    "X-Frame-Options": "DENY", "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "X-Frame-Options": "DENY", "Permissions-Policy": `camera=${req.path === "/cadastro" ? "(self)" : "()"}, microphone=(), geolocation=()`,
     "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Resource-Policy": "same-origin",
   });
   if (PRODUCAO) res.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
@@ -264,7 +264,7 @@ async function aplica(q, u, { op, col, id, dados, base }, opc = {}) {
     throw recusa(400, "CPF inválido: confira os números.");
   let versao = null;
   try {
-    if (op === "excluir") await db.excluir(col, id, q);
+    if (op === "excluir") { await db.excluir(col, id, q); if (col === "clientes") await db.fotos.apagar(id, q); }
     else versao = await db.gravar(col, id, novo, atual?.versao ?? null, q);
   } catch (e) {
     if (e.conflito) throw recusa(409, CONFLITO);
@@ -290,6 +290,13 @@ const escrita = op => assincrono(async (req, res) => {
 app.put("/api/doc/:col/:id", exige(), escrita("gravar"));
 app.patch("/api/doc/:col/:id", exige(), escrita("mesclar"));
 app.delete("/api/doc/:col/:id", exige(), escrita("excluir"));
+app.get("/api/foto/:id", exige(), assincrono(async (req, res) => {
+  const c = await db.ler("clientes", req.params.id);
+  if (!c || (req.u.papel !== "admin" && (c.rota || "") !== req.u.rota)) return res.status(404).json({ erro: "Não encontrado." });
+  const f = await db.fotos.ler(req.params.id);
+  if (!f) return res.status(404).json({ erro: "Não encontrado." });
+  res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, no-store" }).send(Buffer.from(f.jpeg));
+}));
 // Várias gravações que só fazem sentido juntas (pagamento no contrato + lançamento no caixa, por exemplo): entram
 // todas ou nenhuma. Cada uma passa pelas mesmas conferências de uma gravação sozinha.
 app.post("/api/lote", exige(), assincrono(async (req, res) => {
@@ -433,6 +440,15 @@ app.post("/api/publico/precadastro", assincrono(async (req, res) => {
     [d.tempoRegistro, "tempo de carteira"], [d.renda > 0, "renda mensal"],
   ].filter(([ok]) => !ok).map(([, rotulo]) => rotulo);
   if (faltam.length) return res.status(400).json({ erro: `Preencha: ${faltam.join(", ")}.`, faltam });
+  // foto (opcional): só JPEG vindo da câmera da página, até 400 KB
+  let foto = null;
+  if (b.foto) {
+    const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(b.foto));
+    foto = m ? Buffer.from(m[1], "base64") : null;
+    if (!foto || foto.length < 1000 || foto.length > 400e3 || foto[0] !== 0xff || foto[1] !== 0xd8 || foto[2] !== 0xff)
+      return res.status(400).json({ erro: "Não foi possível ler a foto. Tire outra." });
+  }
+  const fotoEm = foto && !Number.isNaN(Date.parse(b.fotoEm)) ? new Date(b.fotoEm).toISOString() : null;
   if (b.aceite !== true) return res.status(400).json({ erro: "É preciso concordar com o uso dos dados." });
   if (!envios(req.ipCliente)) return res.status(429).json({ erro: "Muitos envios deste aparelho. Tente de novo mais tarde." });
 
@@ -450,8 +466,9 @@ app.post("/api/publico/precadastro", assincrono(async (req, res) => {
     profissao: d.profissao, empresa: d.empresa, enderecoTrabalho: d.enderecoTrabalho, tempoRegistro: d.tempoRegistro, renda: d.renda,
     referencias, franquia: t(b.franquia, 30), rota, origem: "link", semLembrete: b.aceitaWhatsapp !== true,
     obs: ja ? `Atenção: este CPF já está cadastrado (${ja.nome}).` : "",
-    status: "pre", criadoEm: agora, aceitePrivacidadeEm: agora,
+    status: "pre", criadoEm: agora, aceitePrivacidadeEm: agora, ...(foto ? { foto: true, fotoEm: fotoEm || agora } : {}),
   });
+  if (foto) await db.fotos.gravar(id, foto, fotoEm || agora);
   audita(req, { acao: "precadastro_publico", colecao: "clientes", id, depois: { nome, franquia: t(b.franquia, 30) } });
   res.json({ ok: true });
 }));

@@ -95,11 +95,18 @@ try {
   const so3 = await chama("POST", "/api/publico/precadastro", { nome: "Hugo Demuner", cpf: pre.cpf, telefone: pre.telefone, aceite: true });
   confere("só nome, CPF e telefone não passa: lista o que falta", so3.status === 400 && ["RG", "CEP", "profissão", "nome da empresa", "endereço do local de trabalho", "telefone do contato"].every(c => so3.json?.faltam?.includes(c)), JSON.stringify(so3.json));
   confere("sem aceite é recusado", (await chama("POST", "/api/publico/precadastro", { ...pre, aceite: false })).status === 400);
-  confere("pré-cadastro válido é aceito", (await chama("POST", "/api/publico/precadastro", pre)).status === 200);
+  const jpeg = "data:image/jpeg;base64," + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(3000, 7), Buffer.from([0xff, 0xd9])]).toString("base64");
+  confere("foto que não é JPEG é recusada", (await chama("POST", "/api/publico/precadastro", { ...pre, foto: "data:image/png;base64,iVBORw0KGgo=" })).status === 400);
+  confere("pré-cadastro válido é aceito", (await chama("POST", "/api/publico/precadastro", { ...pre, foto: jpeg, fotoEm: "2026-11-24T10:00:00Z" })).status === 200);
+  confere("câmera liberada só no formulário público", /camera=\(self\)/.test((await chama("GET", "/cadastro")).h.get("permissions-policy")) && /camera=\(\)/.test((await chama("GET", "/login")).h.get("permissions-policy")));
   confere("robô (campo escondido) recebe ok mas não grava", (await chama("POST", "/api/publico/precadastro", { ...pre, site: "x" })).status === 200);
   await chama("POST", "/api/publico/precadastro", pre);
   const pres = (await chama("GET", "/api/dados", null, adm)).json.docs.filter(d => d.colecao === "clientes" && d.dados.origem === "link");
-  const p0 = pres.find(d => !d.dados.obs)?.dados || {};
+  const p0 = pres.find(d => !d.dados.obs)?.dados || {}, p0id = pres.find(d => !d.dados.obs)?.id;
+  confere("foto fica marcada no pré-cadastro", p0.foto === true && p0.fotoEm === "2026-11-24T10:00:00.000Z");
+  const ft = await chama("GET", "/api/foto/" + p0id, null, adm);
+  confere("administrador vê a foto", ft.status === 200 && ft.h.get("content-type") === "image/jpeg");
+  confere("foto sem login não abre", (await chama("GET", "/api/foto/" + p0id)).status === 401);
   confere("pré-cadastro gravado com status, origem, franquia, UF e renda", pres.length === 2 && p0.status === "pre" && p0.franquia === "GC12" && p0.uf === "ES" && p0.renda === 2500);
   confere("nome, RG, empresa e endereços em maiúsculas", p0.nome === "MARIA DA SILVA" && p0.rg === "1234567 SPTC/ES" && p0.empresa === "MERCADO BOM PREÇO"
     && p0.enderecoTrabalho === "RUA DAS FLORES, 20, CENTRO, SERRA" && p0.endereco === "AV. JOÃO PALÁCIO, 10 · EURICO SALLES · SERRA/ES · 29160-161", JSON.stringify(p0));

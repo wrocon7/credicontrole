@@ -9,6 +9,10 @@
 <style>
 .mai{text-transform:uppercase}
 .opc{font-weight:400;color:var(--muted)}
+.cam{display:flex;flex-direction:column;align-items:center;gap:10px}
+.cam video,.cam img{width:100%;max-width:340px;aspect-ratio:3/4;object-fit:cover;border-radius:14px;background:#111}
+.cam video{transform:scaleX(-1)}
+.cam .botoes{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 </style>
 </head>
 <body>
@@ -51,6 +55,22 @@
       <label class="f s3">Parentesco<input name="ref2Parentesco" class="mai" required placeholder="Ex.: irmão"></label>
       <label class="f">Telefone<input name="ref2Telefone" required inputmode="tel" placeholder="(27) 99999-9999" maxlength="15"></label>
     </div></section>
+
+    <section class="card"><h2>Foto <span class="opc">(opcional)</span></h2>
+      <p class="muted" style="margin-top:-6px">Uma foto do seu rosto, tirada agora com a câmera do celular. Não dá para enviar foto da galeria. Fique num lugar claro, sem boné ou óculos escuros.</p>
+      <div class="cam">
+        <video id="video" playsinline autoplay muted hidden></video>
+        <img id="previa" alt="Sua foto" hidden>
+        <canvas id="tela" hidden></canvas>
+        <div class="botoes">
+          <button type="button" id="abrirCam">Abrir a câmera</button>
+          <button type="button" class="pri" id="tirar" hidden>Tirar foto</button>
+          <button type="button" id="outra" hidden>Tirar outra</button>
+          <button type="button" id="fecharCam" hidden>Cancelar</button>
+        </div>
+        <div id="camErro" class="erro" hidden></div>
+      </div>
+    </section>
 
     <section class="card"><div class="form">
       <label class="oculto" aria-hidden="true">Site<input name="site" tabindex="-1" autocomplete="off"></label>
@@ -113,16 +133,48 @@ f.cep.addEventListener("blur", async () => {
   f.numero.focus();
 });
 
+// Foto: só a câmera ao vivo (getUserMedia). Não existe campo de arquivo, então não há como escolher da galeria.
+const $ = id => document.getElementById(id), video = $("video");
+let fluxo = null, foto = "", fotoEm = "";
+const mostra = (ids, sim) => ids.forEach(i => { $(i).hidden = !sim; });
+const paraCam = () => { if (fluxo) fluxo.getTracks().forEach(t => t.stop()); fluxo = null; video.srcObject = null; };
+async function abreCam() {
+  $("camErro").hidden = true;
+  if (!navigator.mediaDevices?.getUserMedia) { $("camErro").textContent = "Este navegador não abre a câmera. Abra o link no celular, pelo Chrome ou Safari."; $("camErro").hidden = false; return; }
+  try {
+    fluxo = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
+    video.srcObject = fluxo; await video.play().catch(() => {});
+    mostra(["previa", "abrirCam", "outra"], false); mostra(["video", "tirar", "fecharCam"], true);
+  } catch (x) {
+    $("camErro").textContent = x && x.name === "NotAllowedError" ? "A câmera foi bloqueada. Toque no cadeado ao lado do endereço, permita a câmera e tente de novo."
+      : x && x.name === "NotFoundError" ? "Não encontramos câmera neste aparelho. Abra o link no celular." : "Não foi possível abrir a câmera. Tente de novo.";
+    $("camErro").hidden = false;
+  }
+}
+function tira() {
+  const w = video.videoWidth, h = video.videoHeight; if (!w || !h) return;
+  // recorte 3:4 do centro, no máximo 720 x 960
+  const alvo = 3 / 4, sw = w / h > alvo ? h * alvo : w, sh = w / h > alvo ? h : w / alvo, k = Math.min(1, 720 / sw);
+  const c = $("tela"); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+  c.getContext("2d").drawImage(video, (w - sw) / 2, (h - sh) / 2, sw, sh, 0, 0, c.width, c.height);
+  let q = 0.85; foto = c.toDataURL("image/jpeg", q);
+  while (foto.length > 380e3 && q > 0.3) { q -= 0.15; foto = c.toDataURL("image/jpeg", q); }
+  fotoEm = new Date().toISOString(); paraCam();
+  $("previa").src = foto; mostra(["video", "tirar", "fecharCam", "abrirCam"], false); mostra(["previa", "outra"], true);
+}
+$("abrirCam").onclick = abreCam; $("outra").onclick = abreCam; $("tirar").onclick = tira;
+$("fecharCam").onclick = () => { paraCam(); mostra(["video", "tirar", "fecharCam"], false); mostra(foto ? ["previa", "outra"] : ["abrirCam"], true); };
+
 f.onsubmit = async e => {
   e.preventDefault();
   const b = f.querySelector("button[type=submit]"); b.disabled = true; erro.hidden = true;
   const dados = Object.fromEntries(new FormData(f));
-  dados.aceite = f.aceite.checked; dados.aceitaWhatsapp = f.aceitaWhatsapp.checked; dados.franquia = franquia;
+  dados.aceite = f.aceite.checked; dados.aceitaWhatsapp = f.aceitaWhatsapp.checked; dados.franquia = franquia; if (foto) { dados.foto = foto; dados.fotoEm = fotoEm; }
   try {
     const r = await fetch("/api/publico/precadastro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || "Não foi possível enviar.");
-    f.hidden = true; document.getElementById("feito").hidden = false; window.scrollTo(0, 0);
+    paraCam(); f.hidden = true; document.getElementById("feito").hidden = false; window.scrollTo(0, 0);
   } catch (x) { erro.textContent = x.message; erro.hidden = false; b.disabled = false; }
 };
 </script>
