@@ -437,18 +437,15 @@ app.post("/api/publico/precadastro", assincrono(async (req, res) => {
     [d.cidade, "cidade"], [/^[A-Z]{2}$/.test(d.uf), "UF"], [d.profissao, "profissão"], [d.empresa, "nome da empresa"], [d.enderecoTrabalho.length >= 8, "endereço do local de trabalho"],
     [d.ref1Nome, "nome do contato de referência"], [d.ref1Parentesco, "parentesco do contato"], [digitos(d.ref1Telefone) >= 10, "telefone do contato"],
     [d.ref2Nome, "nome do 2º contato"], [d.ref2Parentesco, "parentesco do 2º contato"], [digitos(d.ref2Telefone) >= 10, "telefone do 2º contato"],
-    [d.tempoRegistro, "tempo de carteira"], [d.renda > 0, "renda mensal"],
+    [d.tempoRegistro, "tempo de carteira"], [d.renda > 0, "renda mensal"], [b.foto, "foto do rosto"],
   ].filter(([ok]) => !ok).map(([, rotulo]) => rotulo);
   if (faltam.length) return res.status(400).json({ erro: `Preencha: ${faltam.join(", ")}.`, faltam });
-  // foto (opcional): só JPEG vindo da câmera da página, até 400 KB
-  let foto = null;
-  if (b.foto) {
-    const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(b.foto));
-    foto = m ? Buffer.from(m[1], "base64") : null;
-    if (!foto || foto.length < 1000 || foto.length > 400e3 || foto[0] !== 0xff || foto[1] !== 0xd8 || foto[2] !== 0xff)
-      return res.status(400).json({ erro: "Não foi possível ler a foto. Tire outra." });
-  }
-  const fotoEm = foto && !Number.isNaN(Date.parse(b.fotoEm)) ? new Date(b.fotoEm).toISOString() : null;
+  // foto (obrigatória): só JPEG vindo da câmera da página, até 400 KB
+  const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(b.foto));
+  const foto = m ? Buffer.from(m[1], "base64") : null;
+  if (!foto || foto.length < 1000 || foto.length > 400e3 || foto[0] !== 0xff || foto[1] !== 0xd8 || foto[2] !== 0xff)
+    return res.status(400).json({ erro: "Não foi possível ler a foto. Tire outra." });
+  const fotoEm = !Number.isNaN(Date.parse(b.fotoEm)) ? new Date(b.fotoEm).toISOString() : null;
   if (b.aceite !== true) return res.status(400).json({ erro: "É preciso concordar com o uso dos dados." });
   if (!envios(req.ipCliente)) return res.status(429).json({ erro: "Muitos envios deste aparelho. Tente de novo mais tarde." });
 
@@ -466,9 +463,9 @@ app.post("/api/publico/precadastro", assincrono(async (req, res) => {
     profissao: d.profissao, empresa: d.empresa, enderecoTrabalho: d.enderecoTrabalho, tempoRegistro: d.tempoRegistro, renda: d.renda,
     referencias, franquia: t(b.franquia, 30), rota, origem: "link", semLembrete: b.aceitaWhatsapp !== true,
     obs: ja ? `Atenção: este CPF já está cadastrado (${ja.nome}).` : "",
-    status: "pre", criadoEm: agora, aceitePrivacidadeEm: agora, ...(foto ? { foto: true, fotoEm: fotoEm || agora } : {}),
+    status: "pre", criadoEm: agora, aceitePrivacidadeEm: agora, foto: true, fotoEm: fotoEm || agora,
   });
-  if (foto) await db.fotos.gravar(id, foto, fotoEm || agora);
+  await db.fotos.gravar(id, foto, fotoEm || agora);
   audita(req, { acao: "precadastro_publico", colecao: "clientes", id, depois: { nome, franquia: t(b.franquia, 30) } });
   res.json({ ok: true });
 }));

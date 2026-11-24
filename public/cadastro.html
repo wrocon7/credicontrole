@@ -23,6 +23,22 @@
   <div id="feito" class="ok" hidden>Recebemos o seu pré-cadastro. Em breve entraremos em contato pelo telefone informado.</div>
 
   <form id="f" autocomplete="on">
+    <section class="card"><h2>Foto do rosto</h2>
+      <p class="muted" style="margin-top:-6px">Obrigatória. Uma foto do seu rosto, tirada agora com a câmera do celular. Não dá para enviar foto da galeria. Fique num lugar claro, sem boné ou óculos escuros.</p>
+      <div class="cam">
+        <video id="video" playsinline autoplay muted hidden></video>
+        <img id="previa" alt="Sua foto" hidden>
+        <canvas id="tela" hidden></canvas>
+        <div class="botoes">
+          <button type="button" id="abrirCam">Abrir a câmera</button>
+          <button type="button" class="pri" id="tirar" hidden>Tirar foto</button>
+          <button type="button" id="outra" hidden>Tirar outra</button>
+          <button type="button" id="fecharCam" hidden>Cancelar</button>
+        </div>
+        <div id="camErro" class="erro" hidden></div>
+      </div>
+    </section>
+
     <section class="card"><h2>Dados pessoais</h2><div class="form">
       <label class="f">Nome completo<input name="nome" class="mai" required minlength="5" autocomplete="name"></label>
       <label class="f s3">CPF<input name="cpf" required inputmode="numeric" placeholder="000.000.000-00" maxlength="14"><span id="cpfAviso" class="muted" style="font-weight:600;color:var(--bad)" hidden>CPF inválido: confira os números.</span></label>
@@ -55,22 +71,6 @@
       <label class="f s3">Parentesco<input name="ref2Parentesco" class="mai" required placeholder="Ex.: irmão"></label>
       <label class="f">Telefone<input name="ref2Telefone" required inputmode="tel" placeholder="(27) 99999-9999" maxlength="15"></label>
     </div></section>
-
-    <section class="card"><h2>Foto <span class="opc">(opcional)</span></h2>
-      <p class="muted" style="margin-top:-6px">Uma foto do seu rosto, tirada agora com a câmera do celular. Não dá para enviar foto da galeria. Fique num lugar claro, sem boné ou óculos escuros.</p>
-      <div class="cam">
-        <video id="video" playsinline autoplay muted hidden></video>
-        <img id="previa" alt="Sua foto" hidden>
-        <canvas id="tela" hidden></canvas>
-        <div class="botoes">
-          <button type="button" id="abrirCam">Abrir a câmera</button>
-          <button type="button" class="pri" id="tirar" hidden>Tirar foto</button>
-          <button type="button" id="outra" hidden>Tirar outra</button>
-          <button type="button" id="fecharCam" hidden>Cancelar</button>
-        </div>
-        <div id="camErro" class="erro" hidden></div>
-      </div>
-    </section>
 
     <section class="card"><div class="form">
       <label class="oculto" aria-hidden="true">Site<input name="site" tabindex="-1" autocomplete="off"></label>
@@ -167,6 +167,7 @@ $("fecharCam").onclick = () => { paraCam(); mostra(["video", "tirar", "fecharCam
 
 f.onsubmit = async e => {
   e.preventDefault();
+  if (!foto) { erro.textContent = "Falta a foto do rosto: toque em Abrir a câmera e depois em Tirar foto."; erro.hidden = false; $("abrirCam").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
   const b = f.querySelector("button[type=submit]"); b.disabled = true; erro.hidden = true;
   const dados = Object.fromEntries(new FormData(f));
   dados.aceite = f.aceite.checked; dados.aceitaWhatsapp = f.aceitaWhatsapp.checked; dados.franquia = franquia; if (foto) { dados.foto = foto; dados.fotoEm = fotoEm; }

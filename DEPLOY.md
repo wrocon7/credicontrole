@@ -243,7 +243,7 @@ O script cria o usuário `volume@teste.local` e grava a senha em `login-volume.t
   aberto; a ficha do cliente ganhou o quadro **Pagamentos** com os totais e cada pagamento separado. Pagamentos antigos
   sem divisão usam a proporção do contrato.
 
-- **Foto no pré-cadastro:** o formulário público tem "Abrir a câmera" → "Tirar foto" (opcional). Só abre a câmera ao
+- **Foto no pré-cadastro:** o formulário público tem "Abrir a câmera" → "Tirar foto" (obrigatória: sem foto o envio é recusado). Só abre a câmera ao
   vivo (não existe campo de arquivo, então não dá para escolher da galeria). A página `/cadastro` é a única com
   permissão de câmera (`Permissions-Policy`). O servidor aceita só JPEG de até 400 KB e grava na tabela `fotos`
   (fora de `docs`); a ficha do cliente mostra a foto com data e hora. Abre para o administrador e para o operador da

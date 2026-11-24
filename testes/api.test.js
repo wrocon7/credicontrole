@@ -87,17 +87,19 @@ try {
   confere("mesclar documento inexistente dá 404", (await chama("PATCH", "/api/doc/clientes/nao-existe", { a: 1 }, adm)).status === 404);
 
   // pré-cadastro público
+  const JPEG = "data:image/jpeg;base64," + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(3000, 7), Buffer.from([0xff, 0xd9])]).toString("base64");
   confere("info pública tem aviso", !!(await chama("GET", "/api/publico/info")).json?.aviso);
   const pre = { nome: "Maria  da silva", cpf: "529.982.247-25", rg: "1234567 sptc/es", telefone: "27999990000", aceite: true,
     cep: "29160-161", logradouro: "Av. João Palácio", numero: "10", bairro: "Eurico Salles", cidade: "Serra", uf: "es",
-    profissao: "caixa", empresa: "Mercado Bom Preço", enderecoTrabalho: "Rua das Flores, 20, Centro, Serra", ref1Nome: "José", ref1Parentesco: "pai", ref1Telefone: "(27) 98888-0000", ref2Nome: "Ana", ref2Parentesco: "irmã", ref2Telefone: "27977770000", tempoRegistro: "8 meses", renda: "2.500,00", franquia: "GC12" };
+    profissao: "caixa", empresa: "Mercado Bom Preço", enderecoTrabalho: "Rua das Flores, 20, Centro, Serra", ref1Nome: "José", ref1Parentesco: "pai", ref1Telefone: "(27) 98888-0000", ref2Nome: "Ana", ref2Parentesco: "irmã", ref2Telefone: "27977770000", tempoRegistro: "8 meses", renda: "2.500,00", franquia: "GC12", foto: JPEG };
   confere("CPF inválido é recusado", (await chama("POST", "/api/publico/precadastro", { ...pre, cpf: "111.111.111-11" })).status === 400);
   const so3 = await chama("POST", "/api/publico/precadastro", { nome: "Hugo Demuner", cpf: pre.cpf, telefone: pre.telefone, aceite: true });
   confere("só nome, CPF e telefone não passa: lista o que falta", so3.status === 400 && ["RG", "CEP", "profissão", "nome da empresa", "endereço do local de trabalho", "telefone do contato"].every(c => so3.json?.faltam?.includes(c)), JSON.stringify(so3.json));
   confere("sem aceite é recusado", (await chama("POST", "/api/publico/precadastro", { ...pre, aceite: false })).status === 400);
-  const jpeg = "data:image/jpeg;base64," + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(3000, 7), Buffer.from([0xff, 0xd9])]).toString("base64");
+  const semFoto = await chama("POST", "/api/publico/precadastro", { ...pre, foto: "" });
+  confere("sem foto não passa", semFoto.status === 400 && semFoto.json?.faltam?.includes("foto do rosto"), JSON.stringify(semFoto.json));
   confere("foto que não é JPEG é recusada", (await chama("POST", "/api/publico/precadastro", { ...pre, foto: "data:image/png;base64,iVBORw0KGgo=" })).status === 400);
-  confere("pré-cadastro válido é aceito", (await chama("POST", "/api/publico/precadastro", { ...pre, foto: jpeg, fotoEm: "2026-11-24T10:00:00Z" })).status === 200);
+  confere("pré-cadastro válido é aceito", (await chama("POST", "/api/publico/precadastro", { ...pre, fotoEm: "2026-11-24T10:00:00Z" })).status === 200);
   confere("câmera liberada só no formulário público", /camera=\(self\)/.test((await chama("GET", "/cadastro")).h.get("permissions-policy")) && /camera=\(\)/.test((await chama("GET", "/login")).h.get("permissions-policy")));
   confere("robô (campo escondido) recebe ok mas não grava", (await chama("POST", "/api/publico/precadastro", { ...pre, site: "x" })).status === 200);
   await chama("POST", "/api/publico/precadastro", pre);
