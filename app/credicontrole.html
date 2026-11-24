@@ -85,7 +85,7 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:60
 .banner{background:var(--warn-soft);color:var(--warn);padding:10px 14px;border-radius:8px;margin-bottom:14px;font-weight:500}
 /* gaveta / modal */
 .scrim{position:fixed;inset:0;background:rgba(5,12,8,.5);z-index:40;display:flex;justify-content:flex-end}
-.drawer{background:var(--bg);width:min(880px,100%);height:100%;overflow:auto;padding-block:max(20px,env(safe-area-inset-top,0px)) 40px;padding-left:20px;padding-right:max(20px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px}
+.drawer{background:var(--bg);width:min(980px,100%);height:100%;overflow:auto;padding-block:max(20px,env(safe-area-inset-top,0px)) 40px;padding-left:20px;padding-right:max(20px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px}
 .drawer h2{font-family:var(--f-display);margin:0;font-size:20px;text-wrap:balance}
 .drawer .hd{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .scrim.center{justify-content:center;align-items:center;padding:16px}
@@ -462,7 +462,7 @@ VIEWS.dashboard=()=>{
   const emptyNote=!S.contratos.length?`<div class="panel" style="margin-bottom:14px"><div class="empty"><b>Sua carteira ainda está vazia</b>Cadastre um cliente e crie o primeiro contrato. Os indicadores abaixo se preenchem sozinhos.</div></div>`:"";
   return `${emptyNote}<div class="kpis">
     ${kpi("Total emprestado",money(totalEmp),`${S.contratos.filter(c=>!c.cancelado&&!c.pendente).length} contratos`)}
-    ${kpi("Total recebido",money(recebido),`${quit} contratos quitados`)}
+    ${kpi("Total recebido",money(recebido),`${quit} contrato${quit===1?"":"s"} quitado${quit===1?"":"s"}`)}
     ${kpi("Saldo a receber",money(saldo),`${ativos.length} contratos ativos`)}
     ${kpi("Taxa de inadimplência",taxa.toLocaleString("pt-BR",{maximumFractionDigits:1})+"%",`${money(vAtras)} em ${cAtras} contratos`,taxa>0?"bad":"")}
   </div><div class="kpis">
@@ -798,8 +798,8 @@ function verContrato(id){
   const totalC=r2(ps.reduce((a,p)=>a+p.valor,0)),pago=r2(ps.reduce((a,p)=>a+pagoP(p),0)),rp=resumoPags(c);
   openDrawer(`<div class="hd"><div><h2>Contrato de ${esc(cl.nome)}${ex(c)}</h2><div class="row" style="margin-top:4px">${pillC(c)}<span class="muted">${MOD[c.modalidade]} · ${PER[c.periodicidade]}</span></div></div><button data-act="close">Fechar</button></div>
   ${bannerPend(c)}${bannerInad(c)}<div class="panel"><div class="body dl">${[["Valor emprestado",money(c.valor)],["Taxa",(+c.taxa).toLocaleString("pt-BR")+"% ao período"],["Total do contrato",money(totalC)],["Lucro previsto",money(totalC-c.valor)],["Já recebido",money(pago)],["Capital recebido",money(rp.capital)],["Juros recebidos",money(rp.juros)],["Capital em aberto",money(rp.capAberto)],["Saldo em aberto",money(saldoContrato(c))],["Data do contrato",fdate(c.dataContrato)],["Multa / mora",`${esc(c.multa)}% + ${esc(c.mora)}%/dia`]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("")}${c.obs?`<div style="grid-column:1/-1"><span>Observações</span>${esc(c.obs)}</div>`:""}</div></div>
-  <section class="panel"><header><h2>Parcelas</h2><span class="muted" style="font-size:12.5px">Capital e juros em cinza são a previsão; depois do pagamento, aparece o que foi lançado.</span></header><div class="tbl"><table><thead><tr><th>#</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Capital</th><th class="num">Juros</th><th class="num">Pago</th><th>Situação</th><th></th></tr></thead><tbody>${ps.map(p=>{const e=encargos(p,c);const st=quitadaP(p)?((p.pagamentos||[]).some(g=>g.repasse)?`<span class="pill warn">Paga a menor ${fdate((p.pagamentos.at(-1)||{}).data)}</span>`:`<span class="pill ok">Paga ${fdate((p.pagamentos.at(-1)||{}).data)}</span>`):e.atraso?`<span class="pill bad">${e.atraso} dias</span>`:e.pago>0?'<span class="pill warn">Parcial</span>':'<span class="pill">Aberta</span>';
-    const nota=t=>`<div class="muted" style="font-family:var(--f-body);font-size:12px;line-height:1.35;white-space:normal;min-width:190px;margin-top:2px">${t}</div>`;
+  <section class="panel"><header><h2>Parcelas</h2><span class="muted" style="font-size:12.5px">Capital e juros em cinza são a previsão; depois do pagamento, aparece o que foi lançado.</span></header><div class="tbl"><table><thead><tr><th>#</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Capital</th><th class="num">Juros</th><th class="num">Pago</th><th>Situação</th><th></th></tr></thead><tbody>${ps.map(p=>{const e=encargos(p,c);const st=quitadaP(p)?((p.pagamentos||[]).some(g=>g.repasse)?`<span class="pill warn">Paga a menor</span><div class="muted" style="font-size:12px;margin-top:2px">${fdate((p.pagamentos.at(-1)||{}).data)}</div>`:`<span class="pill ok">Paga ${fdate((p.pagamentos.at(-1)||{}).data)}</span>`):e.atraso?`<span class="pill bad">${e.atraso} dias</span>`:e.pago>0?'<span class="pill warn">Parcial</span>':'<span class="pill">Aberta</span>';
+    const nota=t=>`<div class="muted" style="font-family:var(--f-body);font-size:12px;line-height:1.35;white-space:normal;min-width:150px;max-width:200px;margin-left:auto;margin-top:2px">${t}</div>`;
     const acr=(p.acrescimos||[]).map(a=>nota(`${a.valor?`+ ${money(a.valor)} da parcela ${a.de}`:""}${a.valor&&a.juros?" ":""}${a.juros?`+ ${money(a.juros)} de juros`:""}`)).join("");
     const rep=(p.pagamentos||[]).filter(g=>g.repasse||g.motivo).map(g=>nota(`${g.repasse?`faltou ${money(g.repasse.valor)} → parcela ${g.repasse.para}`:"pago a menor"}${g.motivo?" · motivo: "+esc(g.motivo):""}`)).join("");
     // capital e juros: o que foi lançado nos pagamentos; parcela sem pagamento mostra a divisão prevista (proporção do contrato), em cinza

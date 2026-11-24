@@ -167,7 +167,7 @@ $("fecharCam").onclick = () => { paraCam(); mostra(["video", "tirar", "fecharCam
 
 f.onsubmit = async e => {
   e.preventDefault();
-  if (!foto) { erro.textContent = "Falta a foto do rosto: toque em Abrir a câmera e depois em Tirar foto."; erro.hidden = false; $("abrirCam").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+  if (!foto) { erro.textContent = $("camErro").textContent = "Falta a foto do rosto: toque em Abrir a câmera e depois em Tirar foto."; erro.hidden = $("camErro").hidden = false; $("abrirCam").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
   const b = f.querySelector("button[type=submit]"); b.disabled = true; erro.hidden = true;
   const dados = Object.fromEntries(new FormData(f));
   dados.aceite = f.aceite.checked; dados.aceitaWhatsapp = f.aceitaWhatsapp.checked; dados.franquia = franquia; if (foto) { dados.foto = foto; dados.fotoEm = fotoEm; }
