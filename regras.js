@@ -102,7 +102,7 @@ export function invalido(col, id, d) {
         // divisão do pagamento entre juros e capital: as duas partes somam o valor recebido
         if ((p.pagamentos || []).some(g => (g.juros != null || g.capital != null) && (!numero(g.juros) || !numero(g.capital) || g.juros < 0 || g.capital < 0 || Math.abs(g.juros + g.capital - g.valor) > 0.01)))
           return "Pagamento inválido: juros e capital precisam somar o valor recebido.";
-        if (!Array.isArray(p.acrescimos ?? []) || (p.acrescimos || []).some(x => !x || !numero(x.valor) || x.valor < 0 || !numero(x.juros) || x.juros < 0 || !Number.isInteger(x.de)))
+        if (!Array.isArray(p.acrescimos ?? []) || (p.acrescimos || []).some(x => !x || !numero(x.valor) || x.valor < 0 || !numero(x.juros) || x.juros < 0 || !Number.isInteger(x.de) || (x.capital != null && (!numero(x.capital) || x.capital < 0 || x.capital > x.valor + 0.01))))
           return "Acréscimo de parcela inválido.";
       }
     } else return "Modalidade de contrato inválida.";

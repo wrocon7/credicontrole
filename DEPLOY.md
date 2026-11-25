@@ -253,3 +253,9 @@ O script cria o usuário `volume@teste.local` e grava a senha em `login-volume.t
   Receber **mais** que o devido é aceito: o que passa entra como juros e a parcela fica paga. Contratos tem só as abas
   **Geral** e **Aguardando Pix**; Geral agrupa pelo vencimento da próxima parcela (Atrasados, Vencem hoje, Próximos 7 dias,
   Restante do mês, Mais adiante), com Quitados e Cancelados fechados no fim, e mostra a coluna "Próx. vencimento".
+- **Capital pela tabela do contrato (nov/2026):** o capital previsto de cada parcela segue a tabela Price (amortização
+  crescente; a última fecha o valor emprestado), "só juros" põe todo o capital na última e juros simples divide igual.
+  Na janela Receber, o **capital vem preenchido e fixo**, o juros é digitado e o **valor recebido é a soma** (campo só de
+  leitura). Pagamento a menor leva para a próxima parcela também o capital que faltou (`acrescimos[].capital`, validado
+  no servidor: ≥ 0 e ≤ valor levado); a parcela paga fica com o valor que foi pago dela (multa e mora que faltaram vão só
+  para a próxima). Pagamentos antigos sem divisão lançada usam o capital previsto primeiro e o resto como juros.

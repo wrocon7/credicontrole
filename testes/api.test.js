@@ -182,7 +182,9 @@ try {
   confere("juros e capital que não somam o pagamento são recusados", (await chama("PATCH", k4, semMotivo, opc)).status === 400);
   confere("operador não aumenta a próxima parcela além do que faltou", (await chama("PATCH", k4, pagMenor("pediu prazo", 80), opc)).status === 403);
   confere("operador não muda o valor da parcela sem pagamento", (await chama("PATCH", k4, { parcelas: [{ ...q1, valor: 100 }, q2] }, opc)).status === 403);
-  const comDiv = pagMenor("", 55); Object.assign(comDiv.parcelas[0].pagamentos[0], { juros: 50, capital: 100 });
+  const capDemais = pagMenor("", 55); Object.assign(capDemais.parcelas[0].pagamentos[0], { juros: 50, capital: 100 }); capDemais.parcelas[1].acrescimos[0].capital = 80;
+  confere("capital levado para a próxima parcela não passa do que faltou", (await chama("PATCH", k4, capDemais, opc)).status === 400);
+  const comDiv = pagMenor("", 55); Object.assign(comDiv.parcelas[0].pagamentos[0], { juros: 50, capital: 100 }); comDiv.parcelas[1].acrescimos[0].capital = 50;
   const pm = await chama("PATCH", k4, comDiv, opc);
   confere("pagamento a menor sem motivo, com juros e capital escolhidos, leva o que faltou para a próxima parcela", pm.status === 200, JSON.stringify(pm.body));
   confere("operador não estorna o repasse", (await chama("PATCH", k4, { parcelas: [q1, q2] }, opc)).status === 403);
