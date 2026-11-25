@@ -884,7 +884,7 @@ function formContrato(cliId){
   const cls=S.clientes.filter(c=>(c.status==="ativo"||!c.status)).sort((a,b)=>a.nome.localeCompare(b.nome));
   if(!cls.length){toast("Cadastre ou aprove um cliente antes de criar o contrato.");return}
   const t=today(),adm=souAdmin();
-  openModal(`<h3>Novo contrato</h3>${adm?"":'<div class="banner" style="margin:0">O contrato fica aguardando o administrador confirmar o Pix. Só depois disso ele passa a valer.</div>'}<form id="fCon" class="form">
+  openModal(`<h3>Novo contrato</h3><div class="banner" style="margin:0">${adm?"O contrato fica aguardando o Pix. Depois de enviar o dinheiro, abra o contrato e clique em Confirmar Pix: só então ele passa a valer e a saída entra no caixa.":"O contrato fica aguardando o administrador confirmar o Pix. Só depois disso ele passa a valer."}</div><form id="fCon" class="form">
     <label class="f full">Cliente<select name="clienteId" required>${cls.map(c=>`<option value="${c.id}" ${c.id===cliId?"selected":""}>${esc(c.nome)}</option>`).join("")}</select></label>
     <label class="f">Valor emprestado (R$)<input name="valor" type="number" step="0.01" min="1" required value="1000"></label>
     <label class="f">Modalidade<select name="modalidade">${Object.entries(MOD).sort(([a],[b])=>(b==="price")-(a==="price")).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></label>
@@ -900,7 +900,7 @@ function formContrato(cliId){
     <label class="f parc">Mora (% ao dia)<input name="mora" type="number" step="0.001" min="0" value="${cfg("mora")}"></label>
     <label class="f full">Observações<textarea name="obs" style="min-height:50px"></textarea></label>
     <div class="calc full" id="sim"></div>
-    <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">${adm?"Criar contrato":"Lançar contrato"}</button></div></form>`);
+    <div class="row end full"><button type="button" data-act="close">Cancelar</button><button class="pri" type="submit">Lançar contrato</button></div></form>`);
   const f=$("#fCon"),F=n=>f.elements[n];
   let fixa=false,fixaQ=false,erroParcela=""; // fixa/fixaQ = o valor da parcela (ou o de quitar, no saldo devedor) foi digitado; a taxa passa a ser calculada a partir dele
   const sim=ev=>{
@@ -940,10 +940,9 @@ function formContrato(cliId){
     if(sd)Object.assign(c,{vencimento:d.primeiroVenc,movimentos:[],renegociacoes:[],parcelas:[]});
     else{Object.assign(c,{periodicidade:d.periodicidade,nParcelas:+d.nParcelas,multa:+d.multa,mora:+d.mora});if(fixa)c.parcelaFixa=r2(+d.parcela);c.parcelas=gerarParcelas(c)}
     const {id:cid,...dadosC}=c,ops=[{op:"gravar",col:"contratos",id:cid,dados:dadosC}];
-    // operador: o contrato nasce aguardando o Pix (o servidor garante); a saída do caixa entra quando o administrador confirmar
-    if(adm)ops.push({op:"gravar",col:"transacoes",id:uid("tx"),dados:{tipo:"saida",valor:c.valor,data:c.dataContrato,categoria:"Empréstimo concedido",descricao:"Empréstimo para "+cli(c.clienteId).nome,forma:d.forma,contratoId:c.id,clienteId:c.clienteId,rota:rotaCli(c.clienteId),criadoEm:new Date().toISOString()}});
-    else dadosC.pendente=true;
-    try{await gravaJuntos(ops);closeTop();toast(adm?"Contrato criado":"Contrato lançado. Aguardando o administrador confirmar o Pix.");verContrato(c.id)}catch(_){}};
+    // todo contrato nasce aguardando o Pix (para o operador, o servidor garante); a saída do caixa entra quando o administrador confirmar
+    Object.assign(dadosC,{pendente:true,lancadoPor:eu().nome||""});
+    try{await gravaJuntos(ops);closeTop();toast(adm?"Contrato lançado. Confirme o Pix depois de enviar o dinheiro.":"Contrato lançado. Aguardando o administrador confirmar o Pix.");verContrato(c.id)}catch(_){}};
 }
 function formConfirmarPix(cid){
   const c=S.contratos.find(x=>x.id===cid);if(!c||!c.pendente)return;

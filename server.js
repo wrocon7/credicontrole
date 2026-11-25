@@ -453,8 +453,10 @@ app.post("/api/publico/precadastro", assincrono(async (req, res) => {
   const endereco = [`${d.logradouro}, ${d.numero}`, d.bairro, `${d.cidade}/${d.uf}`, cep].join(" · ");
   const referencias = [[d.ref1Nome, d.ref1Parentesco, d.ref1Telefone], [d.ref2Nome, d.ref2Parentesco, d.ref2Telefone]]
     .filter(([n, , f]) => n || f).map(([n, p, f]) => `${n}${p ? ` (${p})` : ""}${f ? ` — ${telefoneBR(f)}` : ""}`).join("\n");
-  // o link pode trazer a rota (?f=Rota 1): o pré-cadastro já cai nela, se for uma das rotas cadastradas em Configurações
-  const rotasCfg = String(((await db.ler("config", "geral")) || {}).rotas || "").split(",").map(x => x.trim()).filter(Boolean);
+  // o link copiado por um operador traz a rota dele (?f=Rota 1): o pré-cadastro já cai nela, se for uma das rotas de
+  // Configurações ou a rota de um usuário ativo (assim não se perde se a rota do usuário não estiver escrita igual na lista)
+  const rotasCfg = [...String(((await db.ler("config", "geral")) || {}).rotas || "").split(","),
+    ...(await db.usuarios.listar()).filter(u => u.ativo && u.rota).map(u => u.rota)].map(x => String(x).trim()).filter(Boolean);
   const rota = rotasCfg.find(x => x.toLowerCase() === t(b.franquia, 30).toLowerCase()) || "";
   const ja = await db.clientePorCpf(cpf), agora = new Date().toISOString(), id = "cl" + Date.now().toString(36) + crypto.randomBytes(3).toString("hex");
   await db.gravar("clientes", id, {

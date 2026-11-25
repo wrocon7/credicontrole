@@ -16,7 +16,7 @@ const FICHA = { cpf: "529.982.247-25", rg: "1234567 SPTC/ES", telefone: "(27) 99
   empresa: "LOJA X", enderecoTrabalho: "RUA B, 2, CENTRO, SERRA", tempoRegistro: "1 ANO", renda: 2000, referencias: "ANA (MÃE) — (27) 98888-0000\nRUI (PAI) — (27) 97777-0000" };
 const srv = spawn(process.execPath, ["server.js"], {
   cwd: raiz,
-  env: { ...process.env, DATABASE_URL: "", PGLITE_DIR: ":memory:", PORT: String(PORTA), SESSION_SECRET: crypto.randomBytes(16).toString("hex"), ADMIN_EMAIL: ADMIN.email, ADMIN_SENHA: ADMIN.senha, EMAIL_ARQUIVO: EMAILS, APP_URL: BASE },
+  env: { ...process.env, DATABASE_URL: "", PGLITE_DIR: ":memory:", PORT: String(PORTA), SESSION_SECRET: crypto.randomBytes(16).toString("hex"), ADMIN_EMAIL: ADMIN.email, ADMIN_SENHA: ADMIN.senha, EMAIL_ARQUIVO: EMAILS, APP_URL: BASE, IP_HEADER: "x-teste-ip" },
 });
 let saida = "";
 srv.stdout.on("data", d => (saida += d)); srv.stderr.on("data", d => (saida += d));
@@ -231,6 +231,12 @@ try {
   confere("operador não muda a rota de um cliente", (await chama("PATCH", "/api/doc/clientes/cx", { rota: "Rota 2" }, opc)).status === 403);
   await chama("PUT", "/api/doc/clientes/cn", { ...FICHA, nome: "NOVO DO OPERADOR", status: "ativo", rota: "Rota 2" }, opc);
   confere("cliente criado pelo operador cai na rota dele", (await docs()).find(d => d.id === "cn")?.dados.rota === "Rota 1");
+  // link de pré-cadastro copiado pelo operador (?f=rota dele): o pré-cadastro já cai na rota
+  const op2 = await chama("POST", "/api/usuarios", { nome: "Operador Norte", email: "norte@teste.local", senha: senhaNova(), papel: "operador", rota: "Rota Norte" }, adm);
+  const viaLink = async (nome, franquia, ip) => { await chama("POST", "/api/publico/precadastro", { ...pre, nome, franquia }, null, { "x-teste-ip": ip }); return (await docs()).find(d => d.dados.nome === nome)?.dados; };
+  confere("link com a rota (maiúsculas à parte) cai na rota", (await viaLink("PELO LINK UM", "rota 1", "10.0.0.1"))?.rota === "Rota 1");
+  confere("link com a rota de um operador, fora da lista de Configurações, cai na rota", op2.status === 200 && (await viaLink("PELO LINK NORTE", "Rota Norte", "10.0.0.2"))?.rota === "Rota Norte", JSON.stringify(op2.json));
+  confere("link com rota desconhecida fica sem rota", (await viaLink("PELO LINK X", "Rota X", "10.0.0.3"))?.rota === "");
   await chama("PUT", "/api/doc/config/geral", { nome: "Teste", rotas: "Rota 1, Rota 2", operadorRecebe: false }, adm);
   confere("sem liberação, operador não dá baixa", (await chama("PATCH", k1, { movimentos: [...saldo.movimentos, m2, m3, { id: "m4", data: "2026-02-05", valor: 5 }] }, opc)).status === 403
     && (await chama("PUT", "/api/doc/transacoes/t11", { tipo: "entrada", valor: 5, data: "2026-02-05", contratoId: "k1", clienteId: "cx" }, opc)).status === 403);

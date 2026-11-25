@@ -255,6 +255,10 @@ O script cria o usuário `volume@teste.local` e grava a senha em `login-volume.t
   Restante do mês, Mais adiante), com Quitados e Cancelados fechados no fim, e mostra a coluna "Próx. vencimento".
   Para o administrador, uma linha de botões filtra por **rota** (Todas, cada rota, Sem rota), com a contagem de cada uma;
   vale a rota guardada no contrato (a do cliente quando foi lançado) ou, nos antigos, a rota atual do cliente.
+- **Contrato do administrador também aguarda o Pix (nov/2026):** "Novo contrato" grava sempre `pendente: true` e
+  `lancadoPor`, sem lançar a saída no caixa; a saída entra em "Confirmar Pix", igual ao contrato do operador.
+- **Rota do link de pré-cadastro:** o link copiado pelo operador leva `?f=<rota dele>`; o servidor aceita a rota se ela
+  estiver em Configurações **ou** for a rota de um usuário ativo (sem diferença de maiúsculas). Rota desconhecida fica vazia.
 - **Capital pela tabela do contrato (nov/2026):** o capital previsto de cada parcela segue a tabela Price (amortização
   crescente; a última fecha o valor emprestado), "só juros" põe todo o capital na última e juros simples divide igual.
   Na janela Receber, o **capital vem preenchido e fixo**, o juros é digitado e o **valor recebido é a soma** (campo só de
