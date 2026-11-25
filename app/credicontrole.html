@@ -411,7 +411,7 @@ const short=v=>v>=1e6?"R$ "+(v/1e6).toLocaleString("pt-BR",{maximumFractionDigit
 /* ---------- views ---------- */
 const TITLES={dashboard:"Painel",precadastro:"Pré-cadastro",clientes:"Clientes",contratos:"Contratos",inadimplentes:"Inadimplentes",cobrancas:"Cobranças",caixa:"Caixa e transações",relatorios:"Relatórios",ajustes:"Configurações"};
 const LOTE_LINHAS=200; // listas longas mostram as primeiras linhas e um botão "mostrar mais": desenhar milhares trava a tela
-const ui={cliQ:"",cliSt:"todos",conQ:"",conSt:"todos",cobTab:"lembretes",cliRota:"",cxRota:"todas",relRota:"todas",relTab:"resumo",per:{tipo:"mes",mes:today().slice(0,7),de:"",ate:""},cliMax:LOTE_LINHAS,conMax:LOTE_LINHAS};
+const ui={cliQ:"",cliSt:"todos",conQ:"",conSt:"todos",conRota:"todas",cobTab:"lembretes",cliRota:"",cxRota:"todas",relRota:"todas",relTab:"resumo",per:{tipo:"mes",mes:today().slice(0,7),de:"",ate:""},cliMax:LOTE_LINHAS,conMax:LOTE_LINHAS};
 function corta(list,chave){
   const tot=list.length,lim=ui[chave];
   return {vis:tot>lim?list.slice(0,lim):list,resto:tot>lim?`<div class="empty" style="padding:14px 20px">Mostrando ${lim} de ${tot}. <button class="sm" data-act="mais" data-k="${chave}">Mostrar mais ${LOTE_LINHAS}</button> Ou refine a busca.</div>`:""};
@@ -550,10 +550,15 @@ function conRows(list,agrupar){
 VIEWS.contratos=()=>{
   const q=ui.conQ.toLowerCase();
   if(!["todos","pendente"].includes(ui.conSt))ui.conSt="todos";
-  let l=S.contratos.filter(c=>!q||cli(c.clienteId).nome.toLowerCase().includes(q));
+  // rota: a do contrato (guardada quando foi lançado) ou, nos antigos, a do cliente; o operador só recebe a rota dele
+  const adm=souAdmin(),abas=adm?abasRota():null;if(adm&&!abas[ui.conRota])ui.conRota="todas";
+  const R=adm?ui.conRota:"todas",daR=S.contratos.filter(c=>daRota(c,R));
+  let l=daR.filter(c=>!q||cli(c.clienteId).nome.toLowerCase().includes(q));
   if(ui.conSt==="pendente")l=l.filter(c=>statusC(c)==="pendente").sort((a,b)=>(b.dataContrato||"").localeCompare(a.dataContrato||""));
-  const nPend=S.contratos.filter(c=>statusC(c)==="pendente").length;
-  return `<div class="toolbar"><input type="search" id="conQ" placeholder="Buscar por cliente" value="${esc(ui.conQ)}" aria-label="Buscar contratos"><div class="tabs">${tabs("conSt",{todos:"Geral ("+S.contratos.length+")",pendente:"Aguardando Pix"+(nPend?` (${nPend})`:"")})}</div></div><section class="panel">${conRows(l,ui.conSt==="todos")}</section>`;
+  const nPend=daR.filter(c=>statusC(c)==="pendente").length;
+  const abasN=adm?Object.fromEntries(Object.entries(abas).filter(([k])=>k==="todas"||k!=="sem rota"||S.contratos.some(c=>daRota(c,k))).map(([k,n])=>[k,`${n} (${S.contratos.filter(c=>daRota(c,k)).length})`])):null;
+  return `<div class="toolbar"><input type="search" id="conQ" placeholder="Buscar por cliente" value="${esc(ui.conQ)}" aria-label="Buscar contratos"><div class="tabs">${tabs("conSt",{todos:"Geral ("+daR.length+")",pendente:"Aguardando Pix"+(nPend?` (${nPend})`:"")})}</div></div>
+  ${adm&&rotas().length?`<div class="toolbar"><div class="tabs">${tabs("conRota",abasN)}</div></div>`:""}<section class="panel">${conRows(l,ui.conSt==="todos")}</section>`;
 };
 VIEWS.inadimplentes=()=>{
   const at=abertas().filter(emInad),by={},cd=corte(),hoje=x=>isSaldo(x.c)?x.p.valor:x.e.devido; // saldo: o de hoje, não o projetado até o vencimento
